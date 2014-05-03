@@ -138,7 +138,6 @@ void RadiantModule::shutdownModule()
 	GlobalFileSystem().shutdown();
 
 	map::PointFile::Instance().destroy();
-	ui::OverlayDialog::destroy();
 	ui::TextureBrowser::destroy();
 
     _radiantShutdown.clear();
@@ -196,12 +195,12 @@ void RadiantModule::registerUICommands()
 	GlobalCommandSystem().addCommand("ToggleLightInspector", ui::LightInspector::toggleInspector);
 	GlobalCommandSystem().addCommand("SurfaceInspector", ui::SurfaceInspector::toggle);
 	GlobalCommandSystem().addCommand("PatchInspector", ui::PatchInspector::toggle);
-	GlobalCommandSystem().addCommand("OverlayDialog", ui::OverlayDialog::display);
+	GlobalCommandSystem().addCommand("OverlayDialog", ui::OverlayDialog::toggle);
 	GlobalCommandSystem().addCommand("TransformDialog", ui::TransformDialog::toggle);
 
 	GlobalCommandSystem().addCommand("FindBrush", DoFind);
 	
-	GlobalCommandSystem().addCommand("MapInfo", ui::MapInfoDialog::showDialog);
+	GlobalCommandSystem().addCommand("MapInfo", ui::MapInfoDialog::ShowDialog);
 	GlobalCommandSystem().addCommand("EditFiltersDialog", ui::FilterDialog::ShowDialog);
 
 	GlobalCommandSystem().addCommand("AnimationPreview", ui::MD5AnimationViewer::Show);

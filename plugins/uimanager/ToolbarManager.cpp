@@ -61,6 +61,11 @@ wxToolBar* ToolbarManager::getwxToolbar(const std::string& toolbarName, wxWindow
 	}
 }
 
+void ToolbarManager::destroyWxToolbar(const std::string& toolbarName)
+{
+
+}
+
 Gtk::Toolbar* ToolbarManager::getToolbar(const std::string& toolbarName)
 {
 	// Check if the toolbarName exists
@@ -124,7 +129,7 @@ Gtk::ToolItem* ToolbarManager::createToolItem(xml::Node& node)
 
 		if (!ev->empty())
 		{
-			ev->connectWidget(toolButton);
+			// ev->connectWidget(toolButton);
 
 			// Tell the event to update the state of this button
 			ev->updateWidgets();

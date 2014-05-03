@@ -154,7 +154,10 @@ int MenuItem::getMenuPosition(const MenuItemPtr& child)
 		for (wxMenuItemList::const_iterator i = children.begin(); i != children.end(); ++i, ++position)
 		{
 			// Get the widget pointer from the current list item
-			if (*i == childWidget)
+			wxMenuItem* item = *i;
+
+			if (item == childWidget || 
+				(child->getType() == menuFolder && item->GetSubMenu() == childWidget))
 			{
 				return position;
 			}
@@ -307,6 +310,7 @@ void MenuItem::parseNode(xml::Node& node, const MenuItemPtr& thisItem) {
 
 void MenuItem::construct()
 {
+#if 0
 	if (_type == menuBar)
 	{
 		Gtk::MenuBar* menuBar = Gtk::manage(new Gtk::MenuBar);
@@ -399,7 +403,7 @@ void MenuItem::construct()
 				_widget->show_all();
 
 				// Connect the widget to the event
-				event->connectWidget(_widget);
+				// event->connectWidget(_widget);
 			}
 			else
 			{
@@ -422,7 +426,7 @@ void MenuItem::construct()
 	{
 		_widget->show_all();
 	}
-
+#endif
 	_constructed = true;
 }
 
