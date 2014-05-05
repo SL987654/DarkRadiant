@@ -15,14 +15,14 @@ namespace
 namespace ui {
 
 BulgePatchDialog::BulgePatchDialog() :
-	gtkutil::Dialog(_(WINDOW_TITLE), GlobalMainFrame().getTopLevelWindow())
+	wxutil::Dialog(_(WINDOW_TITLE))
 {
 	_noiseHandle = addEntryBox(_(LABEL_NOISE));
 
 	setElementValue(_noiseHandle, string::to_string(NOISE));
 }
 
-bool BulgePatchDialog::queryPatchNoise(int& noise)
+bool BulgePatchDialog::QueryPatchNoise(int& noise)
 {
 	// Instantiate a dialog and run the GTK dialog routine
 	BulgePatchDialog dialog;
