@@ -8,6 +8,7 @@
 #include "iundo.h"
 #include "irender.h"
 #include "mapfile.h"
+#include "SurfaceShader.h"
 
 #include "PatchConstants.h"
 #include "PatchControl.h"
@@ -32,37 +33,18 @@ class Patch :
 	public Snappable,
 	public IUndoable
 {
-private:
 	PatchNode& _node;
-
-	std::size_t _instanceCounter;
 
 	typedef std::set<IPatch::Observer*> Observers;
 	Observers _observers;
 
 	AABB m_aabb_local; // local bbox
 
-	// greebo: The name of the shader
-	std::string m_shader;
-
-	ShaderPtr _shader;
-
 	// Patch dimensions
 	std::size_t m_width;
 	std::size_t m_height;
 
-public:
-	bool m_patchDef3;
-	// The number of subdivisions of this patch
-	std::size_t m_subdivisions_x;
-	std::size_t m_subdivisions_y;
-
-private:
-
 	IUndoStateSaver* _undoStateSaver;
-
-  	// The pointer to the map file
-	MapFile* m_map;
 
 	// dynamically allocated array of control points, size is m_width*m_height
 	PatchControlArray m_ctrl;				// the true control array
@@ -70,12 +52,12 @@ private:
 											// changes can be reverted and overwritten by <m_ctrl>
 
 	// The tesselation for this patch
-	PatchTesselation m_tess;
+	PatchTesselation _mesh;
 
 	// The OpenGL renderables for three rendering modes
-	RenderablePatchSolid m_render_solid;
-	RenderablePatchWireframe m_render_wireframe;
-	RenderablePatchFixedWireframe m_render_wireframe_fixed;
+	RenderablePatchSolid _solidRenderable;
+	RenderablePatchWireframe _wireframeRenderable;
+	RenderablePatchFixedWireframe _fixedWireframeRenderable;
 
 	// The shader states for the control points and the lattice
 	ShaderPtr _pointShader;
@@ -104,8 +86,17 @@ private:
 	// The rendersystem we're attached to, to acquire materials
 	RenderSystemWeakPtr _renderSystem;
 
+    // Shader container, taking care of use count
+    SurfaceShader _shader;
+
 	// greebo: Initialises the patch member variables
 	void construct();
+
+public:
+	bool m_patchDef3;
+	// The number of subdivisions of this patch
+	std::size_t m_subdivisions_x;
+	std::size_t m_subdivisions_y;
 
 public:
 	static int m_CycleCapIndex;// = 0;
@@ -123,9 +114,8 @@ public:
 	void attachObserver(Observer* observer);
 	void detachObserver(Observer* observer);
 
-	void instanceAttach(MapFile* map);
-	// Remove the attached instance and decrease the counters
-	void instanceDetach(MapFile* map);
+	void connectUndoSystem(IMapFileChangeTracker& changeTracker);
+    void disconnectUndoSystem(IMapFileChangeTracker& changeTracker);
 
 	// Allocate callback: pass the allocate call to all the observers
 	void onAllocate(std::size_t size);
@@ -146,9 +136,8 @@ public:
                                 const VolumeTest& volume,
                                 const Matrix4& localToWorld) const;
 
+    RenderSystemPtr getRenderSystem() const;
 	void setRenderSystem(const RenderSystemPtr& renderSystem);
-
-	const ShaderPtr& getState() const;
 
 	// Implementation of the abstract method of SelectionTestable
 	// Called to test if the patch can be selected by the mouse pointer
@@ -180,13 +169,12 @@ public:
 	// Snaps the control points to the grid
 	void snapto(float snap);
 
-	void RenderDebug(RenderStateFlags state) const;
-	// Renders the normals (indicated by lines) of this patch
-	void RenderNormals(RenderStateFlags state) const;
-
 	// Gets the shader name or sets the shader to <name>
 	const std::string& getShader() const;
 	void setShader(const std::string& name);
+
+    const SurfaceShader& getSurfaceShader() const;
+    SurfaceShader& getSurfaceShader();
 
 	// greebo: returns true if the patch's shader is visible, false otherwise
 	bool hasVisibleMaterial() const;
@@ -375,12 +363,6 @@ private:
 	void textureChanged();
 
 	void updateTesselation();
-
-	// greebo: this allocates the shader with the passed name
-	void captureShader();
-
-	// Free the shader from the shadercache
-	void releaseShader();
 
 	// greebo: checks, if the shader name is valid
 	void check_shader();

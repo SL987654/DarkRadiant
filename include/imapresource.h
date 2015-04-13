@@ -2,11 +2,12 @@
 
 #include "inode.h"
 #include "imodule.h"
+#include "imap.h"
 
 namespace map 
 { 
 	class MapFormat; 
-	typedef boost::shared_ptr<MapFormat> MapFormatPtr;
+	typedef std::shared_ptr<MapFormat> MapFormatPtr;
 }
 
 class IMapResource
@@ -30,8 +31,8 @@ public:
 	// Reloads the map file from disk
 	virtual void reload() = 0;
 
-	virtual scene::INodePtr getNode() = 0;
-	virtual void setNode(scene::INodePtr node) = 0;
+    virtual scene::IMapRootNodePtr getNode() = 0;
+    virtual void setNode(const scene::IMapRootNodePtr& node) = 0;
 
 	virtual void addObserver(Observer& observer) = 0;
 	virtual void removeObserver(Observer& observer) = 0;
@@ -39,7 +40,7 @@ public:
 	virtual void realise() = 0;
 	virtual void unrealise() = 0;
 };
-typedef boost::shared_ptr<IMapResource> IMapResourcePtr;
+typedef std::shared_ptr<IMapResource> IMapResourcePtr;
 
 const std::string MODULE_MAPRESOURCEMANAGER("MapResourceManager");
 
@@ -56,7 +57,7 @@ public:
 inline IMapResourceManager& GlobalMapResourceManager() {
 	// Cache the reference locally
 	static IMapResourceManager& _mapResourceManager(
-		*boost::static_pointer_cast<IMapResourceManager>(
+		*std::static_pointer_cast<IMapResourceManager>(
 			module::GlobalModuleRegistry().getModule(MODULE_MAPRESOURCEMANAGER)
 		)
 	);

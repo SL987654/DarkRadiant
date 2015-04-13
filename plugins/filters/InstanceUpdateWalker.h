@@ -61,9 +61,7 @@ public:
 		_showWalker(false),
 		_patchesAreVisible(GlobalFilterSystem().isVisible(FilterRule::TYPE_OBJECT, "patch")),
 		_brushesAreVisible(GlobalFilterSystem().isVisible(FilterRule::TYPE_OBJECT, "brush"))
-	{
-
-	}
+	{}
 
 	// Pre-descent walker function
 	bool pre(const scene::INodePtr& node)
@@ -79,12 +77,19 @@ public:
 
 			node->traverse(entityIsVisible ? _showWalker : _hideWalker);
 
+			if (!entityIsVisible)
+			{
+				// de-select this node and all children
+				Deselector deselector;
+				node->traverse(deselector);
+			}
+
 			// If the entity is hidden, don't traverse the child nodes
 			return entityIsVisible;
 		}
 
 		// greebo: Update visibility of Patches
-		IPatchNodePtr patchNode = boost::dynamic_pointer_cast<IPatchNode>(node);
+		IPatchNodePtr patchNode = std::dynamic_pointer_cast<IPatchNode>(node);
 
 		if (patchNode != NULL)
 		{

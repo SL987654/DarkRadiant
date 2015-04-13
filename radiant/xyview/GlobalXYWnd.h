@@ -1,16 +1,22 @@
-#ifndef GLOBALXYWND_H_
-#define GLOBALXYWND_H_
+#pragma once
 
 #include <list>
-
+#include <map>
 #include "iorthoview.h"
 #include "iclipper.h"
 #include "iregistry.h"
 #include "icommandsystem.h"
+#include "imousetoolmanager.h"
 
 #include "XYWnd.h"
 
-class XYWndManager : public IXWndManager
+class wxMouseEvent;
+
+namespace ui
+{
+
+class XYWndManager : 
+    public IXWndManager
 {
 	// Store an indexed map of XYWnds. When one is deleted, it will notify
 	// the XYWndManager of its index so that it can be removed from the map
@@ -22,6 +28,7 @@ class XYWndManager : public IXWndManager
 
 	// True, if the view is moved when the mouse cursor exceeds the view window borders
 	bool _chaseMouse;
+    int _chaseMouseCap;
 
 	bool _camXYUpdate;
 
@@ -37,8 +44,6 @@ class XYWndManager : public IXWndManager
 
 	unsigned int _defaultBlockSize;
 
-	Glib::RefPtr<Gtk::Window> _globalParentWindow;
-
 private:
 
 	// Get a unique ID for the XYWnd map
@@ -53,6 +58,7 @@ public:
 
 	// Returns the state of the xy view preferences
 	bool chaseMouse() const;
+    int chaseMouseCap() const;
 	bool camXYUpdate() const;
 	bool showCrossHairs() const;
 	bool showGrid() const;
@@ -120,9 +126,14 @@ public:
 	XYWndPtr getView(EViewType viewType);
 
 	/**
-	 * Create a non-floating (embedded) ortho view.
+	 * Create a non-floating (embedded) ortho view. DEPRECATED
 	 */
 	XYWndPtr createEmbeddedOrthoView();
+
+	/**
+	 * Create a non-floating (embedded) orthoview of the given type
+	 */
+	XYWndPtr createEmbeddedOrthoView(EViewType viewType, wxWindow* parent);
 
 	/**
 	 * Create a new floating ortho view, as a child of the main window.
@@ -141,8 +152,8 @@ public:
 	 */
 	void destroyXYWnd(int id);
 
-	// Determines the global parent the xyviews are children of
-	void setGlobalParentWindow(const Glib::RefPtr<Gtk::Window>& globalParentWindow);
+    MouseToolStack getMouseToolsForEvent(wxMouseEvent& ev);
+    void foreachMouseTool(const std::function<void(const MouseToolPtr&)>& func);
 
 	// RegisterableModule implementation
 	const std::string& getName() const;
@@ -164,7 +175,7 @@ private:
 
 }; // class XYWndManager
 
-// Use this method to access the global XYWnd manager class
-XYWndManager& GlobalXYWnd();
+} // namespace
 
-#endif /*GLOBALXYWND_H_*/
+// Use this method to access the global XYWnd manager class
+ui::XYWndManager& GlobalXYWnd();

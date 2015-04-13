@@ -1,10 +1,12 @@
-#ifndef _LANGUAGE_MANAGER_H_
-#define _LANGUAGE_MANAGER_H_
+#pragma once
 
 #include "iregistry.h"
 #include "imodule.h"
 #include <vector>
 #include <map>
+#include <memory>
+
+class wxLocale;
 
 namespace language
 {
@@ -19,6 +21,8 @@ private:
 
 	// The path where all the languages are stored
 	std::string _i18nPath;
+
+	std::unique_ptr<wxLocale> _wxLocale;
 
 	struct Language
 	{
@@ -71,8 +75,6 @@ private:
 	// Returns the language index for the given two-digit code
 	int getLanguageIndex(const std::string& languageCode);
 };
-typedef boost::shared_ptr<LanguageManager> LanguageManagerPtr;
+typedef std::shared_ptr<LanguageManager> LanguageManagerPtr;
 
 } // namespace
-
-#endif /* _LANGUAGE_MANAGER_H_ */

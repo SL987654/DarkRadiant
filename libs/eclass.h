@@ -8,8 +8,7 @@
 
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/foreach.hpp>
+#include <functional>
 #include <boost/lexical_cast.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -99,8 +98,8 @@ inline AttributeList getSpawnargsWithPrefix(const IEntityClass& eclass,
     // Populate the list with with matching attributes
     AttributeList matches;
     eclass.forEachClassAttribute(
-        boost::bind(&detail::addIfMatches,
-                    boost::ref(matches), _1, prefix, includeInherited),
+        std::bind(&detail::addIfMatches,
+                  std::ref(matches), std::placeholders::_1, prefix, includeInherited),
         true // include editor_keys
     );
 
@@ -128,7 +127,7 @@ inline std::string getUsage(const IEntityClass& entityClass)
     // Build the string
     std::ostringstream usage;
     bool firstLine = true;
-    BOOST_FOREACH(EntityClassAttribute a, usageAttrs)
+    for (const EntityClassAttribute& a : usageAttrs)
     {
         if (firstLine)
         {

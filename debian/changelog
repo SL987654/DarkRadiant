@@ -1,10 +1,33 @@
-darkradiant (1.8.0~raring1) raring; urgency=low
+darkradiant (2.0.2) trusty; urgency=medium
+
+  * New upstream release.
+
+ -- Matthew Mott <orbweaver3d@gmail.com>  Mon, 12 Jan 2015 18:48:28 +0000
+
+darkradiant (2.0.1-1~trusty1) trusty; urgency=medium
+
+  * Fix for crash/assertion when trying to show Add Property dialog.
+  * Added .game file for The Dark Mod standalone that does not include a base/
+    subdirectory.
+  * Various other bugfixes.
+
+ -- Matthew Mott <orbweaver3d@gmail.com>  Wed, 24 Dec 2014 14:41:12 +0000
+
+darkradiant (2.0.1~trusty2) trusty; urgency=low
+
+  * 2.0 series release for Linux, including the switch from GTK to wxWidgets.
+  * 2.0.1 contains numerous bug-fixes over the original 2.0 version.
+
+ -- Matthew Mott <orbweaver3d@gmail.com>  Mon, 17 Nov 2014 19:55:17 +0000
+
+darkradiant (1.8.0~trusty1) trusty; urgency=low
 
   * This release contains numerous bug and stability fixes as well as one new
     feature for flooring objects. Some improvements have also been made to
     better support different game types.
+  * Fix for patch mesh rendering on nVidia hardware with recent drivers.
 
- -- Matthew Mott <orbweaver3d@gmail.com>  Wed, 16 Oct 2013 20:28:05 +0100
+ -- Matthew Mott <orbweaver3d@gmail.com>  Sat, 28 Jun 2014 10:02:35 +0100
 
 darkradiant (1.7.3~raring1) raring; urgency=low
 

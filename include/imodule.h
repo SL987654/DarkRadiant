@@ -1,7 +1,8 @@
 #pragma once
 
-#include <boost/shared_ptr.hpp>
-#include <boost/function.hpp>
+#include <memory>
+#include <functional>
+#include <cassert>
 #include <sigc++/trackable.h>
 
 #include <string>
@@ -28,7 +29,7 @@ namespace
 
 // A function taking an error title and an error message string, invoked in debug builds
 // for things like ASSERT_MESSAGE and ERROR_MESSAGE
-typedef boost::function<void (const std::string&, const std::string&)> ErrorHandlingFunction;
+typedef std::function<void (const std::string&, const std::string&)> ErrorHandlingFunction;
 
 /**
  * Provider for various information that may be required by modules during
@@ -172,7 +173,7 @@ public:
 /**
  * Shared pointer typdef.
  */
-typedef boost::shared_ptr<RegisterableModule> RegisterableModulePtr;
+typedef std::shared_ptr<RegisterableModule> RegisterableModulePtr;
 
 /**
  * A ModuleObserver can be attached/detached to certain modules (like the

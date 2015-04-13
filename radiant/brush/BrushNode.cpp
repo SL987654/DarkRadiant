@@ -6,15 +6,15 @@
 #include "icounter.h"
 #include "ientity.h"
 #include "math/Frustum.h"
-#include <boost/bind.hpp>
+#include <functional>
 
 // Constructor
 BrushNode::BrushNode() :
 	scene::SelectableNode(),
 	m_lightList(&GlobalRenderSystem().attachLitObject(*this)),
 	m_brush(*this,
-			Callback(boost::bind(&BrushNode::evaluateTransform, this)),
-			Callback(boost::bind(&SelectableNode::boundsChanged, this))),
+			Callback(std::bind(&BrushNode::evaluateTransform, this)),
+			Callback(std::bind(&SelectableNode::boundsChanged, this))),
 	_selectedPoints(GL_POINTS),
 	_faceCentroidPointsCulled(GL_POINTS),
 	m_viewChanged(false),
@@ -22,7 +22,7 @@ BrushNode::BrushNode() :
 {
 	m_brush.attach(*this); // BrushObserver
 
-	SelectableNode::setTransformChangedCallback(boost::bind(&BrushNode::lightsChanged, this));
+	SelectableNode::setTransformChangedCallback(std::bind(&BrushNode::lightsChanged, this));
 }
 
 // Copy Constructor
@@ -41,8 +41,8 @@ BrushNode::BrushNode(const BrushNode& other) :
 	Transformable(other),
 	m_lightList(&GlobalRenderSystem().attachLitObject(*this)),
 	m_brush(*this, other.m_brush,
-			Callback(boost::bind(&BrushNode::evaluateTransform, this)),
-			Callback(boost::bind(&SelectableNode::boundsChanged, this))),
+			Callback(std::bind(&BrushNode::evaluateTransform, this)),
+			Callback(std::bind(&SelectableNode::boundsChanged, this))),
 	_selectedPoints(GL_POINTS),
 	_faceCentroidPointsCulled(GL_POINTS),
 	m_viewChanged(false),
@@ -59,7 +59,7 @@ BrushNode::~BrushNode()
 
 scene::INode::Type BrushNode::getNodeType() const
 {
-	return Type::Primitive;
+	return Type::Brush;
 }
 
 void BrushNode::lightsChanged()
@@ -242,15 +242,15 @@ scene::INodePtr BrushNode::clone() const {
 	return scene::INodePtr(new BrushNode(*this));
 }
 
-void BrushNode::onInsertIntoScene()
+void BrushNode::onInsertIntoScene(scene::IMapRootNode& root)
 {
-	m_brush.instanceAttach(scene::findMapFile(getSelf()));
+    m_brush.connectUndoSystem(root.getUndoChangeTracker());
 	GlobalCounters().getCounter(counterBrushes).increment();
 
-	SelectableNode::onInsertIntoScene();
+	SelectableNode::onInsertIntoScene(root);
 }
 
-void BrushNode::onRemoveFromScene()
+void BrushNode::onRemoveFromScene(scene::IMapRootNode& root)
 {
 	// De-select this node
 	setSelected(false);
@@ -261,9 +261,9 @@ void BrushNode::onRemoveFromScene()
 	setSelectedComponents(false, SelectionSystem::eFace);
 
 	GlobalCounters().getCounter(counterBrushes).decrement();
-	m_brush.instanceDetach(scene::findMapFile(getSelf()));
+    m_brush.disconnectUndoSystem(root.getUndoChangeTracker());
 
-	SelectableNode::onRemoveFromScene();
+	SelectableNode::onRemoveFromScene(root);
 }
 
 void BrushNode::clear() {
@@ -275,7 +275,7 @@ void BrushNode::reserve(std::size_t size) {
 }
 
 void BrushNode::push_back(Face& face) {
-	m_faceInstances.push_back(FaceInstance(face, boost::bind(&BrushNode::selectedChangedComponent, this, _1)));
+	m_faceInstances.push_back(FaceInstance(face, std::bind(&BrushNode::selectedChangedComponent, this, std::placeholders::_1)));
 }
 
 void BrushNode::pop_back() {
@@ -508,8 +508,21 @@ void BrushNode::evaluateTransform() {
 	Matrix4 matrix(calculateTransform());
 	//rMessage() << "matrix: " << matrix << "\n";
 
-	if (getType() == TRANSFORM_PRIMITIVE) {
-		m_brush.transform(matrix);
+	if (getType() == TRANSFORM_PRIMITIVE)
+    {
+        // If this is a pure translation (no other bits set), call the specialised method
+        if (getTransformationType() == Translation)
+        {
+            // TODO: Take care of texture lock
+            for (auto face : m_brush)
+            {
+                face->translate(getTranslation());
+            }
+        }
+        else
+        {
+            m_brush.transform(matrix);
+        }
 	}
 	else {
 		transformComponents(matrix);

@@ -20,7 +20,7 @@ namespace entity
 {
 	
 class EntityNode;
-typedef boost::shared_ptr<EntityNode> EntityNodePtr;
+typedef std::shared_ptr<EntityNode> EntityNodePtr;
  
 /**
  * greebo: This is the common base class of all map entities.
@@ -107,8 +107,8 @@ public:
 	void attachNames();
 	void detachNames();
 
-	virtual void onInsertIntoScene();
-	virtual void onRemoveFromScene();
+	virtual void onInsertIntoScene(scene::IMapRootNode& root) override;
+	virtual void onRemoveFromScene(scene::IMapRootNode& root) override;
 
 	// Sets/clears render entity references on child nodes
 	virtual void onChildAdded(const scene::INodePtr& child);

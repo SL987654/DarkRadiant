@@ -1,7 +1,7 @@
-#ifndef _IORTHOVIEW_H_
-#define _IORTHOVIEW_H_
+#pragma once
 
 #include "imodule.h"
+#include "iinteractiveview.h"
 
 template<typename Element>
 class BasicVector3;
@@ -13,6 +13,50 @@ enum EViewType
     YZ = 0,
     XZ = 1,
     XY = 2
+};
+
+namespace ui
+{
+
+class IOrthoView :
+    public IInteractiveView
+{
+public:
+    virtual ~IOrthoView() {}
+
+    // The cursor types available on orthoviews
+    enum class CursorType
+    {
+        Pointer,
+        Crosshair,
+        Default = Pointer,
+    };
+
+    // Returns the scale factor of this view
+    virtual float getScale() const = 0;
+
+    // Snaps the given Vector to the XY view's grid
+    // Note that one component of the given vector stays untouched.
+    virtual void snapToGrid(Vector3& point) = 0;
+
+    // Returns the projection type (XY, XZ, YZ) of this view
+    virtual EViewType getViewType() const = 0;
+
+    // Sets the mouse cursor type of this view
+    virtual void setCursorType(CursorType type) = 0;
+
+    // Increase / decrease zoom factor
+    virtual void zoomIn() = 0;
+    virtual void zoomOut() = 0;
+
+    // Update the xy view on the next occasion
+    virtual void queueDraw() = 0;
+
+    // Update the xy view asap, not just during the next idle phase
+    virtual void forceDraw() = 0;
+
+    // Scrolls the view by the specified amount of screen pixels
+    virtual void scroll(int x, int y) = 0;
 };
 
 class IXWndManager :
@@ -44,18 +88,18 @@ public:
 	virtual void setActiveViewType(EViewType viewType) = 0;
 };
 
+} // namespace
+
 const char* const MODULE_ORTHOVIEWMANAGER = "OrthoviewManager";
 
 // This is the accessor for the xy window manager module
-inline IXWndManager& GlobalXYWndManager()
+inline ui::IXWndManager& GlobalXYWndManager()
 {
 	// Cache the reference locally
-	static IXWndManager& _xyWndManager(
-		*boost::static_pointer_cast<IXWndManager>(
+	static ui::IXWndManager& _xyWndManager(
+		*std::static_pointer_cast<ui::IXWndManager>(
 			module::GlobalModuleRegistry().getModule(MODULE_ORTHOVIEWMANAGER)
 		)
 	);
 	return _xyWndManager;
 }
-
-#endif /* _IORTHOVIEW_H_ */

@@ -6,15 +6,14 @@
 #include "iscenegraphfactory.h"
 #include "math/AABB.h"
 
-#include <gtkmm/toolbar.h>
-
 namespace ui
 {
 
-MapPreview::MapPreview()
+MapPreview::MapPreview(wxWindow* parent) : 
+	RenderPreview(parent)
 {}
 
-void MapPreview::setRootNode(const scene::INodePtr& root)
+void MapPreview::setRootNode(const scene::IMapRootNodePtr& root)
 {
 	getScene()->setRoot(root);
 
@@ -33,7 +32,7 @@ void MapPreview::setRootNode(const scene::INodePtr& root)
 	}
 }
 
-scene::INodePtr MapPreview::getRootNode()
+scene::IMapRootNodePtr MapPreview::getRootNode()
 {
 	return getScene()->root();
 }

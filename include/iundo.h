@@ -7,6 +7,8 @@
 #include <cstddef>
 #include <memory>
 
+class IMapFileChangeTracker;
+
 /** 
  * greebo: An UndoMemento has to be allocated on the heap
  * and contains all the information that is needed to describe
@@ -50,21 +52,6 @@ public:
 	virtual void save(IUndoable& undoable) = 0;
 };
 
-/**
- * Some sort of observer implementation which gets notified
- * on undo/redo and mapresource save operations.
- */
-class IUndoTracker
-{
-public:
-    virtual ~IUndoTracker() {}
-
-	virtual void clear() = 0;
-	virtual void begin() = 0;
-	virtual void undo() = 0;
-	virtual void redo() = 0;
-};
-
 const std::string MODULE_UNDOSYSTEM("UndoSystem");
 
 class UndoSystem :
@@ -72,8 +59,9 @@ class UndoSystem :
 {
 public:
 	// Undoable objects need to call this to get hold of a StateSaver instance
-	// which will take care of exporting and saving the state.
-	virtual IUndoStateSaver* getStateSaver(IUndoable& undoable) = 0;
+	// which will take care of exporting and saving the state. The passed map file change 
+    // tracker will be notified when the state is saved.
+    virtual IUndoStateSaver* getStateSaver(IUndoable& undoable, IMapFileChangeTracker& tracker) = 0;
 	virtual void releaseStateSaver(IUndoable& undoable) = 0;
 
 	virtual std::size_t size() const = 0;
@@ -100,15 +88,30 @@ public:
 	// it immediately from the stack, therefore it never existed.
 	virtual void cancel() = 0;
 
-	virtual void attachTracker(IUndoTracker& tracker) = 0;
-	virtual void detachTracker(IUndoTracker& tracker) = 0;
+    /**
+    * Observer implementation which gets notified
+    * on undo/redo perations.
+    */
+    class Tracker
+    {
+    public:
+        virtual ~Tracker() {}
+
+        virtual void clear() = 0;
+        virtual void begin() = 0;
+        virtual void undo() = 0;
+        virtual void redo() = 0;
+    };
+
+	virtual void attachTracker(Tracker& tracker) = 0;
+	virtual void detachTracker(Tracker& tracker) = 0;
 };
 
 // The accessor function
 inline UndoSystem& GlobalUndoSystem() {
 	// Cache the reference locally
 	static UndoSystem& _undoSystem(
-		*boost::static_pointer_cast<UndoSystem>(
+		*std::static_pointer_cast<UndoSystem>(
 			module::GlobalModuleRegistry().getModule(MODULE_UNDOSYSTEM)
 		)
 	);

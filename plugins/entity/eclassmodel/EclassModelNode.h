@@ -18,7 +18,7 @@ namespace entity
 {
 
 class EclassModelNode;
-typedef boost::shared_ptr<EclassModelNode> EclassModelNodePtr;
+typedef std::shared_ptr<EclassModelNode> EclassModelNodePtr;
 
 class EclassModelNode :
 	public EntityNode,
@@ -56,11 +56,11 @@ public:
 protected:
 	// Gets called by the Transformable implementation whenever
 	// scale, rotation or translation is changed.
-	void _onTransformationChanged();
+    void _onTransformationChanged() override;
 
 	// Called by the Transformable implementation before freezing
 	// or when reverting transformations.
-	void _applyTransformation();
+    void _applyTransformation() override;
 
 	// Override EntityNode::construct()
 	void construct();

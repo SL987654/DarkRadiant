@@ -1,60 +1,77 @@
 #include "GlobalCamera.h"
 
+#include "imousetoolmanager.h"
 #include "ieventmanager.h"
 #include "iselection.h"
-#include "gdk/gdkkeysyms.h"
+#include "itextstream.h"
 #include "xmlutil/Node.h"
 
 #include "Camera.h"
 #include "CameraSettings.h"
 
 #include "registry/registry.h"
-#include "gtkutil/window/PersistentTransientWindow.h"
-#include "gtkutil/FramedWidget.h"
 #include "modulesystem/StaticModule.h"
+#include "wxutil/MouseButton.h"
+
+#include "tools/ShaderClipboardTools.h"
+#include "tools/JumpToObjectTool.h"
+#include "tools/FreeMoveTool.h"
 
 #include "FloatingCamWnd.h"
-#include <boost/bind.hpp>
+#include <functional>
+
+namespace ui
+{
+
+namespace
+{
+    const float DEFAULT_STRAFE_SPEED = 0.65f;
+    const float DEFAULT_FORWARD_STRAFE_FACTOR = 1.0f;
+}
 
 // Constructor
 GlobalCameraManager::GlobalCameraManager() :
-	_activeCam(-1)
+	_activeCam(-1),
+    _toggleStrafeModifierFlags(wxutil::Modifier::NONE),
+    _toggleStrafeForwardModifierFlags(wxutil::Modifier::NONE),
+    _strafeSpeed(DEFAULT_STRAFE_SPEED),
+    _forwardStrafeFactor(DEFAULT_FORWARD_STRAFE_FACTOR)
 {}
 
 void GlobalCameraManager::registerCommands()
 {
-	GlobalCommandSystem().addCommand("CenterView", boost::bind(&GlobalCameraManager::resetCameraAngles, this, _1));
-	GlobalCommandSystem().addCommand("CubicClipZoomIn", boost::bind(&GlobalCameraManager::farClipPlaneIn, this, _1));
-	GlobalCommandSystem().addCommand("CubicClipZoomOut", boost::bind(&GlobalCameraManager::farClipPlaneOut, this, _1));
+	GlobalCommandSystem().addCommand("CenterView", std::bind(&GlobalCameraManager::resetCameraAngles, this, std::placeholders::_1));
+	GlobalCommandSystem().addCommand("CubicClipZoomIn", std::bind(&GlobalCameraManager::farClipPlaneIn, this, std::placeholders::_1));
+	GlobalCommandSystem().addCommand("CubicClipZoomOut", std::bind(&GlobalCameraManager::farClipPlaneOut, this, std::placeholders::_1));
 
-	GlobalCommandSystem().addCommand("UpFloor", boost::bind(&GlobalCameraManager::changeFloorUp, this, _1));
-	GlobalCommandSystem().addCommand("DownFloor", boost::bind(&GlobalCameraManager::changeFloorDown, this, _1));
+	GlobalCommandSystem().addCommand("UpFloor", std::bind(&GlobalCameraManager::changeFloorUp, this, std::placeholders::_1));
+	GlobalCommandSystem().addCommand("DownFloor", std::bind(&GlobalCameraManager::changeFloorDown, this, std::placeholders::_1));
 
 	// angua: increases and decreases the movement speed of the camera
-	GlobalCommandSystem().addCommand("CamIncreaseMoveSpeed", boost::bind(&GlobalCameraManager::increaseCameraSpeed, this, _1));
-	GlobalCommandSystem().addCommand("CamDecreaseMoveSpeed", boost::bind(&GlobalCameraManager::decreaseCameraSpeed, this, _1));
+	GlobalCommandSystem().addCommand("CamIncreaseMoveSpeed", std::bind(&GlobalCameraManager::increaseCameraSpeed, this, std::placeholders::_1));
+	GlobalCommandSystem().addCommand("CamDecreaseMoveSpeed", std::bind(&GlobalCameraManager::decreaseCameraSpeed, this, std::placeholders::_1));
 
-	GlobalCommandSystem().addCommand("TogglePreview", boost::bind(&GlobalCameraManager::toggleLightingMode, this, _1));
+	GlobalCommandSystem().addCommand("TogglePreview", std::bind(&GlobalCameraManager::toggleLightingMode, this, std::placeholders::_1));
 
 	// Insert movement commands
-	GlobalCommandSystem().addCommand("CameraForward", boost::bind(&GlobalCameraManager::moveForwardDiscrete, this, _1));
-	GlobalCommandSystem().addCommand("CameraBack", boost::bind(&GlobalCameraManager::moveBackDiscrete, this, _1));
-	GlobalCommandSystem().addCommand("CameraLeft", boost::bind(&GlobalCameraManager::rotateLeftDiscrete, this, _1));
-	GlobalCommandSystem().addCommand("CameraRight", boost::bind(&GlobalCameraManager::rotateRightDiscrete, this, _1));
-	GlobalCommandSystem().addCommand("CameraStrafeRight", boost::bind(&GlobalCameraManager::moveRightDiscrete, this, _1));
-	GlobalCommandSystem().addCommand("CameraStrafeLeft", boost::bind(&GlobalCameraManager::moveLeftDiscrete, this, _1));
+	GlobalCommandSystem().addCommand("CameraForward", std::bind(&GlobalCameraManager::moveForwardDiscrete, this, std::placeholders::_1));
+	GlobalCommandSystem().addCommand("CameraBack", std::bind(&GlobalCameraManager::moveBackDiscrete, this, std::placeholders::_1));
+	GlobalCommandSystem().addCommand("CameraLeft", std::bind(&GlobalCameraManager::rotateLeftDiscrete, this, std::placeholders::_1));
+	GlobalCommandSystem().addCommand("CameraRight", std::bind(&GlobalCameraManager::rotateRightDiscrete, this, std::placeholders::_1));
+	GlobalCommandSystem().addCommand("CameraStrafeRight", std::bind(&GlobalCameraManager::moveRightDiscrete, this, std::placeholders::_1));
+	GlobalCommandSystem().addCommand("CameraStrafeLeft", std::bind(&GlobalCameraManager::moveLeftDiscrete, this, std::placeholders::_1));
 
-	GlobalCommandSystem().addCommand("CameraUp", boost::bind(&GlobalCameraManager::moveUpDiscrete, this, _1));
-	GlobalCommandSystem().addCommand("CameraDown", boost::bind(&GlobalCameraManager::moveDownDiscrete, this, _1));
-	GlobalCommandSystem().addCommand("CameraAngleUp", boost::bind(&GlobalCameraManager::pitchUpDiscrete, this, _1));
-	GlobalCommandSystem().addCommand("CameraAngleDown", boost::bind(&GlobalCameraManager::pitchDownDiscrete, this, _1));
+	GlobalCommandSystem().addCommand("CameraUp", std::bind(&GlobalCameraManager::moveUpDiscrete, this, std::placeholders::_1));
+	GlobalCommandSystem().addCommand("CameraDown", std::bind(&GlobalCameraManager::moveDownDiscrete, this, std::placeholders::_1));
+	GlobalCommandSystem().addCommand("CameraAngleUp", std::bind(&GlobalCameraManager::pitchUpDiscrete, this, std::placeholders::_1));
+	GlobalCommandSystem().addCommand("CameraAngleDown", std::bind(&GlobalCameraManager::pitchDownDiscrete, this, std::placeholders::_1));
 
 	// Bind the events to the commands
 	GlobalEventManager().addCommand("CenterView", "CenterView");
 
 	GlobalEventManager().addToggle(
         "ToggleCubicClip",
-        boost::bind(&CameraSettings::toggleFarClip, getCameraSettings(), _1)
+        std::bind(&CameraSettings::toggleFarClip, getCameraSettings(), std::placeholders::_1)
     );
 	// Set the default status of the cubic clip
 	GlobalEventManager().setToggled("ToggleCubicClip", getCameraSettings()->farClipEnabled());
@@ -87,12 +104,12 @@ void GlobalCameraManager::registerCommands()
 	GlobalEventManager().addCommand("CameraAngleUp", "CameraAngleUp");
 	GlobalEventManager().addCommand("CameraAngleDown", "CameraAngleDown");
 
-	GlobalEventManager().addKeyEvent("CameraFreeMoveForward", boost::bind(&GlobalCameraManager::onFreelookMoveForwardKey, this, _1));
-	GlobalEventManager().addKeyEvent("CameraFreeMoveBack", boost::bind(&GlobalCameraManager::onFreelookMoveBackKey, this, _1));
-	GlobalEventManager().addKeyEvent("CameraFreeMoveLeft", boost::bind(&GlobalCameraManager::onFreelookMoveLeftKey, this, _1));
-	GlobalEventManager().addKeyEvent("CameraFreeMoveRight", boost::bind(&GlobalCameraManager::onFreelookMoveRightKey, this, _1));
-	GlobalEventManager().addKeyEvent("CameraFreeMoveUp", boost::bind(&GlobalCameraManager::onFreelookMoveUpKey, this, _1));
-	GlobalEventManager().addKeyEvent("CameraFreeMoveDown", boost::bind(&GlobalCameraManager::onFreelookMoveDownKey, this, _1));
+	GlobalEventManager().addKeyEvent("CameraFreeMoveForward", std::bind(&GlobalCameraManager::onFreelookMoveForwardKey, this, std::placeholders::_1));
+	GlobalEventManager().addKeyEvent("CameraFreeMoveBack", std::bind(&GlobalCameraManager::onFreelookMoveBackKey, this, std::placeholders::_1));
+	GlobalEventManager().addKeyEvent("CameraFreeMoveLeft", std::bind(&GlobalCameraManager::onFreelookMoveLeftKey, this, std::placeholders::_1));
+	GlobalEventManager().addKeyEvent("CameraFreeMoveRight", std::bind(&GlobalCameraManager::onFreelookMoveRightKey, this, std::placeholders::_1));
+	GlobalEventManager().addKeyEvent("CameraFreeMoveUp", std::bind(&GlobalCameraManager::onFreelookMoveUpKey, this, std::placeholders::_1));
+	GlobalEventManager().addKeyEvent("CameraFreeMoveDown", std::bind(&GlobalCameraManager::onFreelookMoveDownKey, this, std::placeholders::_1));
 }
 
 CamWndPtr GlobalCameraManager::getActiveCamWnd() {
@@ -122,9 +139,10 @@ CamWndPtr GlobalCameraManager::getActiveCamWnd() {
 	return (_activeCam != -1) ? cam : CamWndPtr();
 }
 
-CamWndPtr GlobalCameraManager::createCamWnd() {
+CamWndPtr GlobalCameraManager::createCamWnd(wxWindow* parent)
+{
 	// Instantantiate a new camera
-	CamWndPtr cam(new CamWnd());
+	CamWndPtr cam(new CamWnd(parent));
 
 	_cameras.insert(CamWndMap::value_type(cam->getId(), cam));
 
@@ -159,11 +177,12 @@ void GlobalCameraManager::removeCamWnd(int id) {
 FloatingCamWndPtr GlobalCameraManager::createFloatingWindow()
 {
 	// Create a new floating camera window widget and return it
-	FloatingCamWndPtr cam(new FloatingCamWnd(_parent));
+	FloatingCamWndPtr cam(new FloatingCamWnd);
 
 	_cameras.insert(CamWndMap::value_type(cam->getId(), cam));
 
-	if (_activeCam == -1) {
+	if (_activeCam == -1)
+	{
 		_activeCam = cam->getId();
 	}
 
@@ -227,12 +246,6 @@ void GlobalCameraManager::update() {
 			_cameras.erase(i++);
 		}
 	}
-}
-
-// Set the global parent window
-void GlobalCameraManager::setParent(const Glib::RefPtr<Gtk::Window>& parent)
-{
-	_parent = parent;
 }
 
 void GlobalCameraManager::changeFloorUp(const cmd::ArgumentList& args) {
@@ -470,6 +483,60 @@ void GlobalCameraManager::pitchDownDiscrete(const cmd::ArgumentList& args) {
 	camWnd->getCamera().pitchDownDiscrete();
 }
 
+float GlobalCameraManager::getCameraStrafeSpeed()
+{
+    return _strafeSpeed;
+}
+
+float GlobalCameraManager::getCameraForwardStrafeFactor()
+{
+    return _forwardStrafeFactor;
+}
+
+unsigned int GlobalCameraManager::getStrafeModifierFlags()
+{
+    return _toggleStrafeModifierFlags;
+}
+
+unsigned int GlobalCameraManager::getStrafeForwardModifierFlags()
+{
+    return _toggleStrafeForwardModifierFlags;
+}
+
+ui::MouseToolStack GlobalCameraManager::getMouseToolsForEvent(wxMouseEvent& ev)
+{
+    unsigned int state = wxutil::MouseButton::GetStateForMouseEvent(ev);
+    return GlobalMouseToolManager().getMouseToolsForEvent(ui::IMouseToolGroup::Type::CameraView, state);
+}
+
+void GlobalCameraManager::foreachMouseTool(const std::function<void(const ui::MouseToolPtr&)>& func)
+{
+    GlobalMouseToolManager().getGroup(ui::IMouseToolGroup::Type::CameraView).foreachMouseTool(func);
+}
+
+void GlobalCameraManager::loadCameraStrafeDefinitions()
+{
+    // Find all the camera strafe definitions
+    xml::NodeList strafeList = GlobalRegistry().findXPath("user/ui/input/cameraview/strafemode");
+
+    if (!strafeList.empty())
+    {
+        const xml::Node& node = strafeList[0];
+
+        // Get the strafe condition flags
+        _toggleStrafeModifierFlags = wxutil::Modifier::GetStateFromModifierString(node.getAttributeValue("toggle"));
+        _toggleStrafeForwardModifierFlags = wxutil::Modifier::GetStateFromModifierString(node.getAttributeValue("forward"));
+
+        _strafeSpeed = string::convert<float>(node.getAttributeValue("speed"), DEFAULT_STRAFE_SPEED);
+        _forwardStrafeFactor = string::convert<float>(node.getAttributeValue("forwardFactor"), DEFAULT_FORWARD_STRAFE_FACTOR);
+    }
+    else
+    {
+        // No Camera strafe definitions found!
+        rWarning() << "GlobalCameraManager: No camera strafe definitions found!" << std::endl;
+    }
+}
+
 // RegisterableModule implementation
 const std::string& GlobalCameraManager::getName() const {
 	static std::string _name(MODULE_CAMERA);
@@ -486,6 +553,7 @@ const StringSet& GlobalCameraManager::getDependencies() const
 		_dependencies.insert(MODULE_EVENTMANAGER);
 		_dependencies.insert(MODULE_RENDERSYSTEM);
 		_dependencies.insert(MODULE_COMMANDSYSTEM);
+        _dependencies.insert(MODULE_MOUSETOOLMANAGER);
 	}
 
 	return _dependencies;
@@ -506,8 +574,20 @@ void GlobalCameraManager::initialiseModule(const ApplicationContext& ctx)
 	}
 
 	registerCommands();
+    loadCameraStrafeDefinitions();
 
 	CamWnd::captureStates();
+
+    IMouseToolGroup& toolGroup = GlobalMouseToolManager().getGroup(IMouseToolGroup::Type::CameraView);
+
+    toolGroup.registerMouseTool(std::make_shared<FreeMoveTool>());
+    toolGroup.registerMouseTool(std::make_shared<PickShaderTool>());
+    toolGroup.registerMouseTool(std::make_shared<PasteShaderProjectedTool>());
+    toolGroup.registerMouseTool(std::make_shared<PasteShaderNaturalTool>());
+    toolGroup.registerMouseTool(std::make_shared<PasteShaderCoordsTool>());
+    toolGroup.registerMouseTool(std::make_shared<PasteShaderToBrushTool>());
+    toolGroup.registerMouseTool(std::make_shared<PasteShaderNameTool>());
+    toolGroup.registerMouseTool(std::make_shared<JumpToObjectTool>());
 }
 
 void GlobalCameraManager::shutdownModule()
@@ -520,9 +600,10 @@ void GlobalCameraManager::shutdownModule()
 // Define the static Camera module
 module::StaticModule<GlobalCameraManager> cameraModule;
 
-// ------------------------------------------------------------------------------------
+} // namespace
 
 // The accessor function to the GlobalCameraManager instance
-GlobalCameraManager& GlobalCamera() {
-	return *cameraModule.getModule();
+ui::GlobalCameraManager& GlobalCamera()
+{
+	return *ui::cameraModule.getModule();
 }

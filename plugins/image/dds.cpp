@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "dds.h"
 
 #include <stdlib.h>
+#include <algorithm>
 
 #include "ifilesystem.h"
 #include "iarchive.h"
@@ -29,6 +30,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "ddslib.h"
 #include "DDSImage.h"
+
+namespace image
+{
 
 DDSImagePtr LoadDDSFromStream(InputStream& stream)
 {
@@ -112,4 +116,19 @@ DDSImagePtr LoadDDSFromStream(InputStream& stream)
 
 ImagePtr LoadDDS(ArchiveFile& file) {
 	return LoadDDSFromStream(file.getInputStream());
+}
+
+ImagePtr DDSLoader::load(ArchiveFile& file) const
+{
+    // Pass the call to the according load function
+    return LoadDDS(file);
+}
+
+ImageTypeLoader::Extensions DDSLoader::getExtensions() const
+{
+    Extensions extensions;
+    extensions.push_back("dds");
+    return extensions;
+}
+
 }

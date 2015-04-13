@@ -1,8 +1,8 @@
 #ifndef _ICOMMANDSYSTEM_H_
 #define _ICOMMANDSYSTEM_H_
 
-#include <boost/shared_ptr.hpp>
-#include <boost/function.hpp>
+#include <memory>
+#include <functional>
 #include "math/Vector2.h"
 #include "math/Vector3.h"
 
@@ -191,7 +191,7 @@ typedef std::vector<Argument> ArgumentList;
  *
  * This can be both a free function and a member function.
  */
-typedef boost::function<void (const ArgumentList&)> Function;
+typedef std::function<void (const ArgumentList&)> Function;
 
 // A command signature consists just of arguments, no return types
 class Signature :
@@ -322,7 +322,7 @@ public:
 	 */
 	virtual AutoCompletionInfo getAutoCompletionInfo(const std::string& prefix) = 0;
 };
-typedef boost::shared_ptr<ICommandSystem> ICommandSystemPtr;
+typedef std::shared_ptr<ICommandSystem> ICommandSystemPtr;
 
 } // namespace cmd
 
@@ -332,7 +332,7 @@ const std::string MODULE_COMMANDSYSTEM("CommandSystem");
 inline cmd::ICommandSystem& GlobalCommandSystem() {
 	// Cache the reference locally
 	static cmd::ICommandSystem& _cmdSystem(
-		*boost::static_pointer_cast<cmd::ICommandSystem>(
+		*std::static_pointer_cast<cmd::ICommandSystem>(
 			module::GlobalModuleRegistry().getModule(MODULE_COMMANDSYSTEM)
 		)
 	);

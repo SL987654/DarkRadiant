@@ -5,6 +5,8 @@
 #include <string>
 #include "ipatch.h"
 #include "ibrush.h"
+#include "iscenegraph.h"
+
 #include "patch/Patch.h"
 #include "brush/Brush.h"
 
@@ -15,8 +17,7 @@ namespace map {
  * counting all occurrences of each shader.
  */
 class ShaderBreakdown :
-	public scene::NodeVisitor,
-	public BrushVisitor
+	public scene::NodeVisitor
 {
 public:
 	struct ShaderCount
@@ -53,17 +54,17 @@ public:
 
 		Brush* brush = Node_getBrush(node);
 
-		if (brush != NULL) {
-			brush->forEachFace(*this);
+		if (brush != NULL) 
+        {
+            brush->forEachFace([this] (Face& face)
+            {
+                increaseShaderCount(face.getShader(), true);
+            });
+
 			return false;
 		}
 
 		return true;
-	}
-
-	// Brushvisitor implementation
-	void visit(Face& face) const {
-		const_cast<ShaderBreakdown*>(this)->increaseShaderCount(face.getShader(), true);
 	}
 
 	// Accessor method to retrieve the shader breakdown map

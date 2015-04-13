@@ -1,25 +1,19 @@
-#ifndef _REGULAR_LAYOUT_H_
-#define _REGULAR_LAYOUT_H_
+#pragma once
 
-#include "gtkutil/PanedPosition.h"
+#include "wxutil/PanedPosition.h"
 #include "imainframelayout.h"
-
-#include "camera/CamWnd.h"
-
-namespace Gtk
-{
-	class HPaned;
-	class VPaned;
-}
 
 namespace ui
 {
+
+class CamWnd;
+typedef std::shared_ptr<CamWnd> CamWndPtr;
 
 #define REGULAR_LAYOUT_NAME "Regular"
 #define REGULAR_LEFT_LAYOUT_NAME "RegularLeft"
 
 class RegularLayout;
-typedef boost::shared_ptr<RegularLayout> RegularLayoutPtr;
+typedef std::shared_ptr<RegularLayout> RegularLayoutPtr;
 
 class RegularLayout :
 	public IMainFrameLayout
@@ -29,11 +23,11 @@ class RegularLayout :
 
 	struct RegularView
 	{
-		boost::shared_ptr<Gtk::HPaned> horizPane;
-		Gtk::VPaned* texCamPane;
+		wxSplitterWindow* horizPane;
+		wxSplitterWindow* texCamPane;
 
-		gtkutil::PanedPosition posHPane;
-		gtkutil::PanedPosition posTexCamPane;
+		wxutil::PanedPosition posHPane;
+		wxutil::PanedPosition posTexCamPane;
 	} _regular;
 
 	// Whether the cam is left or right
@@ -63,5 +57,3 @@ private:
 };
 
 } // namespace ui
-
-#endif /* _REGULAR_LAYOUT_H_ */

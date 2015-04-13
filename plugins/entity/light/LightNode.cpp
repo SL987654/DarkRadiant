@@ -1,7 +1,8 @@
 #include "LightNode.h"
 
+#include "itextstream.h"
 #include "../EntitySettings.h"
-#include <boost/bind.hpp>
+#include <functional>
 
 namespace entity {
 
@@ -11,16 +12,16 @@ LightNode::LightNode(const IEntityClassPtr& eclass) :
 	EntityNode(eclass),
 	_light(_entity,
 		   *this,
-		   Callback(boost::bind(&scene::Node::transformChanged, this)),
-		   Callback(boost::bind(&scene::Node::boundsChanged, this)),
-		   Callback(boost::bind(&LightNode::lightChanged, this))),
-	_lightCenterInstance(_light.getDoom3Radius().m_centerTransformed, boost::bind(&LightNode::selectedChangedComponent, this, _1)),
-	_lightTargetInstance(_light.targetTransformed(), boost::bind(&LightNode::selectedChangedComponent, this, _1)),
-	_lightRightInstance(_light.rightTransformed(), _light.targetTransformed(), boost::bind(&LightNode::selectedChangedComponent, this, _1)),
-	_lightUpInstance(_light.upTransformed(), _light.targetTransformed(), boost::bind(&LightNode::selectedChangedComponent, this, _1)),
-	_lightStartInstance(_light.startTransformed(), boost::bind(&LightNode::selectedChangedComponent, this, _1)),
-	_lightEndInstance(_light.endTransformed(), boost::bind(&LightNode::selectedChangedComponent, this, _1)),
-	m_dragPlanes(boost::bind(&LightNode::selectedChangedComponent, this, _1))
+		   Callback(std::bind(&scene::Node::transformChanged, this)),
+		   Callback(std::bind(&scene::Node::boundsChanged, this)),
+		   Callback(std::bind(&LightNode::lightChanged, this))),
+	_lightCenterInstance(_light.getDoom3Radius().m_centerTransformed, std::bind(&LightNode::selectedChangedComponent, this, std::placeholders::_1)),
+	_lightTargetInstance(_light.targetTransformed(), std::bind(&LightNode::selectedChangedComponent, this, std::placeholders::_1)),
+	_lightRightInstance(_light.rightTransformed(), _light.targetTransformed(), std::bind(&LightNode::selectedChangedComponent, this, std::placeholders::_1)),
+	_lightUpInstance(_light.upTransformed(), _light.targetTransformed(), std::bind(&LightNode::selectedChangedComponent, this, std::placeholders::_1)),
+	_lightStartInstance(_light.startTransformed(), std::bind(&LightNode::selectedChangedComponent, this, std::placeholders::_1)),
+	_lightEndInstance(_light.endTransformed(), std::bind(&LightNode::selectedChangedComponent, this, std::placeholders::_1)),
+	_dragPlanes(std::bind(&LightNode::selectedChangedComponent, this, std::placeholders::_1))
 {}
 
 LightNode::LightNode(const LightNode& other) :
@@ -29,16 +30,16 @@ LightNode::LightNode(const LightNode& other) :
 	_light(other._light,
 		   *this,
            _entity,
-           Callback(boost::bind(&Node::transformChanged, this)),
-		   Callback(boost::bind(&Node::boundsChanged, this)),
-		   Callback(boost::bind(&LightNode::lightChanged, this))),
-	_lightCenterInstance(_light.getDoom3Radius().m_centerTransformed, boost::bind(&LightNode::selectedChangedComponent, this, _1)),
-	_lightTargetInstance(_light.targetTransformed(), boost::bind(&LightNode::selectedChangedComponent, this, _1)),
-	_lightRightInstance(_light.rightTransformed(), _light.targetTransformed(), boost::bind(&LightNode::selectedChangedComponent, this, _1)),
-	_lightUpInstance(_light.upTransformed(), _light.targetTransformed(), boost::bind(&LightNode::selectedChangedComponent, this, _1)),
-	_lightStartInstance(_light.startTransformed(), boost::bind(&LightNode::selectedChangedComponent, this, _1)),
-	_lightEndInstance(_light.endTransformed(), boost::bind(&LightNode::selectedChangedComponent, this, _1)),
-	m_dragPlanes(boost::bind(&LightNode::selectedChangedComponent, this, _1))
+           Callback(std::bind(&Node::transformChanged, this)),
+		   Callback(std::bind(&Node::boundsChanged, this)),
+		   Callback(std::bind(&LightNode::lightChanged, this))),
+	_lightCenterInstance(_light.getDoom3Radius().m_centerTransformed, std::bind(&LightNode::selectedChangedComponent, this, std::placeholders::_1)),
+	_lightTargetInstance(_light.targetTransformed(), std::bind(&LightNode::selectedChangedComponent, this, std::placeholders::_1)),
+	_lightRightInstance(_light.rightTransformed(), _light.targetTransformed(), std::bind(&LightNode::selectedChangedComponent, this, std::placeholders::_1)),
+	_lightUpInstance(_light.upTransformed(), _light.targetTransformed(), std::bind(&LightNode::selectedChangedComponent, this, std::placeholders::_1)),
+	_lightStartInstance(_light.startTransformed(), std::bind(&LightNode::selectedChangedComponent, this, std::placeholders::_1)),
+	_lightEndInstance(_light.endTransformed(), std::bind(&LightNode::selectedChangedComponent, this,std::placeholders:: _1)),
+	_dragPlanes(std::bind(&LightNode::selectedChangedComponent, this, std::placeholders::_1))
 {}
 
 LightNodePtr LightNode::Create(const IEntityClassPtr& eclass)
@@ -90,18 +91,18 @@ float LightNode::getShaderParm(int parmNum) const
 	return EntityNode::getShaderParm(parmNum);
 }
 
-void LightNode::onInsertIntoScene()
+void LightNode::onInsertIntoScene(scene::IMapRootNode& root)
 {
 	// Call the base class first
-	EntityNode::onInsertIntoScene();
+	EntityNode::onInsertIntoScene(root);
 
 	GlobalRenderSystem().attachLight(*this);
 }
 
-void LightNode::onRemoveFromScene()
+void LightNode::onRemoveFromScene(scene::IMapRootNode& root)
 {
 	// Call the base class first
-	EntityNode::onRemoveFromScene();
+	EntityNode::onRemoveFromScene(root);
 
 	GlobalRenderSystem().detachLight(*this);
 
@@ -119,7 +120,7 @@ void LightNode::testSelect(Selector& selector, SelectionTest& test)
 
 // greebo: Returns true if drag planes or one or more light vertices are selected
 bool LightNode::isSelectedComponents() const {
-	return (m_dragPlanes.isSelected() || _lightCenterInstance.isSelected() ||
+	return (_dragPlanes.isSelected() || _lightCenterInstance.isSelected() ||
 			_lightTargetInstance.isSelected() || _lightRightInstance.isSelected() ||
 			_lightUpInstance.isSelected() || _lightStartInstance.isSelected() ||
 			_lightEndInstance.isSelected() );
@@ -128,7 +129,7 @@ bool LightNode::isSelectedComponents() const {
 // greebo: Selects/deselects all components, depending on the chosen componentmode
 void LightNode::setSelectedComponents(bool select, SelectionSystem::EComponentMode mode) {
 	if (mode == SelectionSystem::eFace) {
-		m_dragPlanes.setSelected(false);
+		_dragPlanes.setSelected(false);
 	}
 
 	if (mode == SelectionSystem::eVertex) {
@@ -141,16 +142,15 @@ void LightNode::setSelectedComponents(bool select, SelectionSystem::EComponentMo
 	}
 }
 
-void LightNode::testSelectComponents(Selector& selector, SelectionTest& test, SelectionSystem::EComponentMode mode) {
-	// Get the Origin of the Light Volume AABB (NOT the localAABB() which includes the light center)
-	Vector3 lightOrigin = _light.lightAABB().origin;
+void LightNode::testSelectComponents(Selector& selector, SelectionTest& test, SelectionSystem::EComponentMode mode)
+{
+	if (mode == SelectionSystem::eVertex)
+    {
+        // Use the full rotation matrix for the test
+        test.BeginMesh(localToWorld());
 
-	Matrix4 local2World = Matrix4::getTranslation(lightOrigin);
-
-	test.BeginMesh(local2World);
-
-	if (mode == SelectionSystem::eVertex) {
-		if (_light.isProjected()) {
+		if (_light.isProjected()) 
+        {
 			// Test the projection components for selection
 			_lightTargetInstance.testSelect(selector, test);
 			_lightRightInstance.testSelect(selector, test);
@@ -158,7 +158,8 @@ void LightNode::testSelectComponents(Selector& selector, SelectionTest& test, Se
 			_lightStartInstance.testSelect(selector, test);
 			_lightEndInstance.testSelect(selector, test);
 		}
-		else {
+		else 
+        {
 			// Test if the light center is hit by the click
 			_lightCenterInstance.testSelect(selector, test);
 		}
@@ -233,13 +234,13 @@ void LightNode::selectPlanes(Selector& selector, SelectionTest& test, const Plan
 	test.BeginMesh(localToWorld());
 	// greebo: Make sure to use the local lightAABB() for the selection test, excluding the light center
 	AABB localLightAABB(Vector3(0,0,0), _light.getDoom3Radius().m_radiusTransformed);
-	m_dragPlanes.selectPlanes(localLightAABB, selector, test, selectedPlaneCallback, rotation());
+	_dragPlanes.selectPlanes(localLightAABB, selector, test, selectedPlaneCallback);
 }
 
 void LightNode::selectReversedPlanes(Selector& selector, const SelectedPlanes& selectedPlanes)
 {
 	AABB localLightAABB(Vector3(0,0,0), _light.getDoom3Radius().m_radiusTransformed);
-	m_dragPlanes.selectReversedPlanes(localLightAABB, selector, selectedPlanes, rotation());
+	_dragPlanes.selectReversedPlanes(localLightAABB, selector, selectedPlanes);
 }
 
 scene::INodePtr LightNode::clone() const
@@ -376,68 +377,98 @@ void LightNode::renderInactiveComponents(RenderableCollector& collector, const V
 	}
 }
 
-void LightNode::evaluateTransform() {
-	if (getType() == TRANSFORM_PRIMITIVE) {
+void LightNode::evaluateTransform()
+{
+	if (getType() == TRANSFORM_PRIMITIVE)
+    {
 		_light.translate(getTranslation());
 		_light.rotate(getRotation());
 	}
-	else {
+	else
+    {
 		// Check if the light center is selected, if yes, transform it, if not, it's a drag plane operation
-		if (GlobalSelectionSystem().ComponentMode() == SelectionSystem::eVertex) {
-			if (_lightCenterInstance.isSelected()) {
-				// Retrieve the translation and apply it to the temporary light center variable
-				// This adds the translation vector to the previous light origin
-				_light.getDoom3Radius().m_centerTransformed =
-										_light.getDoom3Radius().m_center + getTranslation();
+		if (GlobalSelectionSystem().ComponentMode() == SelectionSystem::eVertex)
+        {
+			// When the user is mouse-moving a vertex in the orthoviews he/she is operating
+            // in world space. It's expected that the selected vertex follows the mouse.
+            // Since the editable light vertices are measured in local coordinates 
+            // we have to calculate the new position in world space first and then transform 
+            // the point back into local space.
+
+            if (_lightCenterInstance.isSelected())
+            {
+                // Retrieve the translation and apply it to the temporary light center variable
+                Vector3 newWorldPos = localToWorld().transformPoint(_light.getDoom3Radius().m_center) + getTranslation();
+                _light.getDoom3Radius().m_centerTransformed = localToWorld().getFullInverse().transformPoint(newWorldPos);
+            }
+            
+			if (_lightTargetInstance.isSelected())
+            {
+                Vector3 newWorldPos = localToWorld().transformPoint(_light.target()) + getTranslation();
+                _light.targetTransformed() = localToWorld().getFullInverse().transformPoint(newWorldPos);
 			}
 
-			if (_lightTargetInstance.isSelected()) {
-				// Delegate the work to the Light class
-				_light.translateLightTarget(getTranslation());
+            if (_lightStartInstance.isSelected())
+            {
+                Vector3 newWorldPos = localToWorld().transformPoint(_light.start()) + getTranslation();
+                Vector3 newLightStart = localToWorld().getFullInverse().transformPoint(newWorldPos);
+
+                // Assign the light start, perform the boundary checks
+                _light.setLightStart(newLightStart);
+            }
+
+            if (_lightEndInstance.isSelected())
+            {
+                Vector3 newWorldPos = localToWorld().transformPoint(_light.end()) + getTranslation();
+                _light.endTransformed() = localToWorld().getFullInverse().transformPoint(newWorldPos);
+
+                _light.ensureLightStartConstraints();
+            }
+
+            // Even more footwork needs to be done for light_up and light_right since these
+            // are measured relatively to the light_target position.
+
+            // Extend the regular local2World by the additional light_target transform
+            Matrix4 local2World = localToWorld();
+            local2World.translateBy(_light._lightTarget);
+            Matrix4 world2Local = local2World.getFullInverse();
+
+			if (_lightRightInstance.isSelected())
+            {
+                Vector3 newWorldPos = local2World.transformPoint(_light.right()) + getTranslation();
+                _light.rightTransformed() = world2Local.transformPoint(newWorldPos);
 			}
 
-			if (_lightRightInstance.isSelected()) {
-				// Save the new light_right vector
-				_light.rightTransformed() = _light.right() + getTranslation();
-			}
-
-			if (_lightUpInstance.isSelected()) {
-				// Save the new light_up vector
-				_light.upTransformed() = _light.up() + getTranslation();
-			}
-
-			if (_lightStartInstance.isSelected()) {
-				// Delegate the work to the Light class (including boundary checks)
-				_light.translateLightStart(getTranslation());
-			}
-
-			if (_lightEndInstance.isSelected()) {
-				// Save the new light_up vector
-				_light.endTransformed() = _light.end() + getTranslation();
+			if (_lightUpInstance.isSelected())
+            {
+                Vector3 newWorldPos = local2World.transformPoint(_light.up()) + getTranslation();
+                _light.upTransformed() = world2Local.transformPoint(newWorldPos);
 			}
 
 			// If this is a projected light, then it is likely for the according vertices to have changed, so update the projection
-			if (_light.isProjected()) {
+			if (_light.isProjected())
+            {
 				// Call projection changed, so that the recalculation can be triggered (call for projection() would be ignored otherwise)
 				_light.projectionChanged();
 
 				// Recalculate the frustum
-				_light.projection();
+                _light.updateProjection();
 			}
 		}
-		else {
+		else
+        {
 			// Ordinary Drag manipulator
-			//m_dragPlanes.m_bounds = _light.aabb();
+			//_dragPlanes.m_bounds = _light.aabb();
 			// greebo: Be sure to use the actual lightAABB for evaluating the drag operation, NOT
 			// the aabb() or localABB() method, that returns the bounding box including the light center,
 			// which may be positioned way out of the volume
-			m_dragPlanes.m_bounds = _light.lightAABB();
-			_light.setLightRadius(m_dragPlanes.evaluateResize(getTranslation(), rotation()));
+			_dragPlanes.m_bounds = _light.lightAABB();
+			_light.setLightRadius(_dragPlanes.evaluateResize(getTranslation(), rotation()));
 		}
 	}
 }
 
-Vector3 LightNode::worldOrigin() const
+const Vector3& LightNode::worldOrigin() const
 {
     return _light.worldOrigin();
 }
@@ -447,7 +478,8 @@ Matrix4 LightNode::getLightTextureTransformation() const
     return _light.getLightTextureTransformation();
 }
 
-ShaderPtr LightNode::getShader() const {
+const ShaderPtr& LightNode::getShader() const
+{
 	return _light.getShader();
 }
 

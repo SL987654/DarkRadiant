@@ -48,7 +48,8 @@ Node::Node() :
 	_transformChanged(true),
 	_transformMutex(false),
 	_local2world(Matrix4::getIdentity()),
-	_instantiated(false)
+	_instantiated(false),
+    _renderEntity(nullptr)
 {
 	// Each node is part of layer 0 by default
 	_layers.insert(0);
@@ -56,7 +57,7 @@ Node::Node() :
 
 Node::Node(const Node& other) :
 	INode(other),
-	boost::enable_shared_from_this<Node>(other),
+	std::enable_shared_from_this<Node>(other),
 	_state(other._state),
 	_isRoot(other._isRoot),
 	_id(getNewId()),	// ID is incremented on copy
@@ -67,7 +68,8 @@ Node::Node(const Node& other) :
 	_childBoundsMutex(false),
 	_local2world(other._local2world),
 	_instantiated(false),
-	_layers(other._layers)
+	_layers(other._layers),
+    _renderEntity(other._renderEntity)
 {}
 
 scene::INodePtr Node::getSelf()
@@ -255,22 +257,24 @@ void Node::onChildRemoved(const INodePtr& child)
 	}
 }
 
-void Node::onInsertIntoScene()
+void Node::onInsertIntoScene(IMapRootNode& root)
 {
 	_instantiated = true;
 }
 
-void Node::onRemoveFromScene()
+void Node::onRemoveFromScene(IMapRootNode& root)
 {
 	_instantiated = false;
 }
 
-void Node::instanceAttach(MapFile* mapfile) {
-	_children.instanceAttach(mapfile);
+void Node::connectUndoSystem(IMapFileChangeTracker& changeTracker)
+{
+    _children.connectUndoSystem(changeTracker);
 }
 
-void Node::instanceDetach(MapFile* mapfile) {
-	_children.instanceDetach(mapfile);
+void Node::disconnectUndoSystem(IMapFileChangeTracker& changeTracker)
+{
+    _children.disconnectUndoSystem(changeTracker);
 }
 
 TraversableNodeSet& Node::getTraversable() {
@@ -292,7 +296,7 @@ void Node::getPathRecursively(Path& targetPath)
 	assert(parent.get() != this); // avoid loopbacks
 
 	if (parent != NULL) {
-		boost::dynamic_pointer_cast<Node>(parent)->getPathRecursively(targetPath);
+		std::dynamic_pointer_cast<Node>(parent)->getPathRecursively(targetPath);
 	}
 
 	// After passing the call to the parent, add self
@@ -306,7 +310,7 @@ Path Node::getPath()
 	INodePtr parent = getParent();
 	if (parent != NULL) {
 		// We have a parent, walk up the ancestry
-		boost::dynamic_pointer_cast<Node>(parent)->getPathRecursively(result);
+		std::dynamic_pointer_cast<Node>(parent)->getPathRecursively(result);
 	}
 
 	// Finally, add "self" to the path
@@ -440,7 +444,7 @@ void Node::transformChanged()
 	// Next, traverse the children and notify them
 	_children.foreachNode([] (const scene::INodePtr& child)->bool
 	{
-		boost::dynamic_pointer_cast<Node>(child)->transformChangedLocal();
+		std::dynamic_pointer_cast<Node>(child)->transformChangedLocal();
 		return true;
 	});
 

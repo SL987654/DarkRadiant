@@ -6,7 +6,6 @@
 
 #include "string/string.h"
 #include <map>
-#include <boost/shared_array.hpp>
 
 #include "FontInfo.h"
 
@@ -45,7 +44,7 @@ public:
 private:
 	void reloadFonts();
 };
-typedef boost::shared_ptr<FontManager> FontManagerPtr;
+typedef std::shared_ptr<FontManager> FontManagerPtr;
 
 } // namespace fonts
 

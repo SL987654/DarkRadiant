@@ -19,7 +19,7 @@
 #include "Stack.h"
 #include "StackFiller.h"
 
-#include <boost/bind.hpp>
+#include <functional>
 
 namespace undo {
 
@@ -55,7 +55,7 @@ class RadiantUndoSystem :
 
 	std::size_t _undoLevels;
 
-	typedef std::set<IUndoTracker*> Trackers;
+	typedef std::set<Tracker*> Trackers;
 	Trackers _trackers;
 
 public:
@@ -79,6 +79,12 @@ public:
 	{
 		return &_undoables[&undoable];
 	}
+
+    IUndoStateSaver* getStateSaver(IUndoable& undoable, IMapFileChangeTracker& tracker)
+    {
+        auto result = _undoables.insert(std::make_pair(&undoable, UndoStackFiller(tracker)));
+        return &(result.first->second);
+    }
 
 	void releaseStateSaver(IUndoable& undoable)
 	{
@@ -218,13 +224,13 @@ public:
 		}
 	}
 
-	void attachTracker(IUndoTracker& tracker)
+	void attachTracker(Tracker& tracker)
 	{
 		ASSERT_MESSAGE(_trackers.find(&tracker) == _trackers.end(), "undo tracker already attached");
 		_trackers.insert(&tracker);
 	}
 
-	void detachTracker(IUndoTracker& tracker)
+	void detachTracker(Tracker& tracker)
 	{
 		ASSERT_MESSAGE(_trackers.find(&tracker) != _trackers.end(), "undo tracker cannot be detached");
 		_trackers.erase(&tracker);
@@ -258,8 +264,8 @@ public:
 		rMessage() << "UndoSystem::initialiseModule called" << std::endl;
 
 		// Add commands for console input
-		GlobalCommandSystem().addCommand("Undo", boost::bind(&RadiantUndoSystem::undoCmd, this, _1));
-		GlobalCommandSystem().addCommand("Redo", boost::bind(&RadiantUndoSystem::redoCmd, this, _1));
+		GlobalCommandSystem().addCommand("Undo", std::bind(&RadiantUndoSystem::undoCmd, this, std::placeholders::_1));
+		GlobalCommandSystem().addCommand("Redo", std::bind(&RadiantUndoSystem::redoCmd, this, std::placeholders::_1));
 
 		// Bind events to commands
 		GlobalEventManager().addCommand("Undo", "Undo");
@@ -344,9 +350,9 @@ private:
 		}
 	}
 
-	void foreachTracker(const std::function<void(IUndoTracker&)>& functor) const
+	void foreachTracker(const std::function<void(Tracker&)>& functor) const
 	{
-		std::for_each(_trackers.begin(), _trackers.end(), [&] (IUndoTracker* tracker)
+		std::for_each(_trackers.begin(), _trackers.end(), [&] (Tracker* tracker)
 		{ 
 			functor(*tracker);
 		});
@@ -354,22 +360,22 @@ private:
 
 	void trackersClear() const
 	{
-		foreachTracker([&] (IUndoTracker& tracker) { tracker.clear(); });
+		foreachTracker([&] (Tracker& tracker) { tracker.clear(); });
 	}
 
 	void trackersBegin() const
 	{
-		foreachTracker([&] (IUndoTracker& tracker) { tracker.begin(); });
+		foreachTracker([&] (Tracker& tracker) { tracker.begin(); });
 	}
 
 	void trackersUndo() const
 	{
-		foreachTracker([&] (IUndoTracker& tracker) { tracker.undo(); });
+		foreachTracker([&] (Tracker& tracker) { tracker.undo(); });
 	}
 
 	void trackersRedo() const
 	{
-		foreachTracker([&] (IUndoTracker& tracker) { tracker.redo(); });
+		foreachTracker([&] (Tracker& tracker) { tracker.redo(); });
 	}
 
 	// Gets called by the PreferenceSystem as request to create the according settings page
@@ -380,7 +386,7 @@ private:
 	}
 
 }; // class RadiantUndoSystem
-typedef boost::shared_ptr<RadiantUndoSystem> RadiantUndoSystemPtr;
+typedef std::shared_ptr<RadiantUndoSystem> RadiantUndoSystemPtr;
 
 } // namespace undo
 

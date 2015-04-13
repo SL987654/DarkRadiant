@@ -1,243 +1,208 @@
-#ifndef XYWND_H_
-#define XYWND_H_
+#pragma once
 
-#include "iclipper.h"
 #include "iscenegraph.h"
+#include "iorthoview.h"
 
 #include "math/Vector3.h"
 #include "math/Matrix4.h"
 #include "math/Vector4.h"
-#include "gtkutil/FreezePointer.h"
-#include "gtkutil/DeferredMotion.h"
-#include "gtkutil/WindowPosition.h"
-#include "xmlutil/Node.h"
-#include "timer.h"
+#include "wxutil/FreezePointer.h"
+#include "wxutil/event/KeyEventFilter.h"
+#include "wxutil/GLWidget.h"
+
+#include <wx/cursor.h>
+#include <wx/stopwatch.h>
 
 #include "map/DeferredDraw.h"
 #include "camera/CameraObserver.h"
-#include "camera/CamWnd.h"
-#include "selection/RadiantWindowObserver.h"
+#include "render/View.h"
+#include "imousetool.h"
+#include "tools/XYMouseToolEvent.h"
 
-	namespace {
-		const int XYWND_MINSIZE_X = 100;
-		const int XYWND_MINSIZE_Y = 100;
-	}
+namespace ui
+{
 
 class XYWnd :
-	public CameraObserver,
-	public scene::Graph::Observer
+    public IOrthoView,
+    public CameraObserver,
+    public scene::Graph::Observer,
+    public wxEvtHandler
 {
 protected:
-	// Unique ID of this XYWnd
-	int _id;
+    // Unique ID of this XYWnd
+    int _id;
 
-	gtkutil::GLWidget* _glWidget;
+    wxutil::GLWidget* _wxGLWidget;
+    bool _drawing;
 
-	DeferredDraw m_deferredDraw;
-	gtkutil::DeferredMotion m_deferred_motion;
+    DeferredDraw _deferredDraw;
 
-	// The maximum/minimum values of a coordinate
-	double _minWorldCoord;
-	double _maxWorldCoord;
+    // The maximum/minimum values of a coordinate
+    double _minWorldCoord;
+    double _maxWorldCoord;
 
-	// The timer used for chase mouse xyview movements
-	Timer _chaseMouseTimer;
+    // The timer used for chase mouse xyview movements
+    wxStopWatch _chaseMouseTimer;
 
-	gtkutil::FreezePointer _freezePointer;
+    wxutil::FreezePointer _freezePointer;
 
-	bool _moveStarted;
-	bool _zoomStarted;
+    wxCursor _defaultCursor;
+    wxCursor _crossHairCursor;
 
-	guint _chaseMouseHandler;
+    bool _chasingMouse;
 
-	double	m_fScale;
-	Vector3 m_vOrigin;
+    double	_scale;
+    Vector3 _origin;
 
-	render::View m_view;
+    render::View _view;
 
-	// Shader to use for selected items
-	static ShaderPtr _selectedShader;
+    // Shader to use for selected items
+    static ShaderPtr _selectedShader;
 
-	int m_ptCursorX, m_ptCursorY;
+    Vector3 _mousePosition;
 
-	unsigned int m_buttonstate;
+    EViewType _viewType;
 
-	int m_nNewBrushPressx;
-	int m_nNewBrushPressy;
-	scene::INodePtr m_NewBrushDrag;
-	bool m_bNewBrushDrag;
+    int _contextMenu_x;
+    int _contextMenu_y;
+    bool _contextMenu;
 
-	Vector3 m_mousePosition;
+    wxutil::KeyEventFilterPtr _escapeListener;
 
-	EViewType m_viewType;
+    // Save the current button state
+    unsigned int _eventState;
 
-	SelectionSystemWindowObserver* m_window_observer;
-	Rectangle _dragRectangle;
+    bool _isActive;
 
-	gtkutil::WindowPosition _windowPosition;
+    int _chasemouseCurrentX;
+    int _chasemouseCurrentY;
+    int _chasemouseDeltaX;
+    int _chasemouseDeltaY;
 
-	int m_entityCreate_x, m_entityCreate_y;
-	bool m_entityCreate;
+    Matrix4 _projection;
+    Matrix4 _modelView;
 
-  	// Save the current button state
-  	guint _eventState;
+    int _width;
+    int _height;
 
-	sigc::connection m_move_focusOut;
-	sigc::connection m_zoom_focusOut;
-
-	bool _isActive;
-
-	int m_chasemouse_current_x, m_chasemouse_current_y;
-	int m_chasemouse_delta_x, m_chasemouse_delta_y;
-
-	Matrix4 m_projection;
-	Matrix4 m_modelview;
-
-	int _width;
-	int _height;
-
-	int _dragZoom;
-
-	Glib::RefPtr<Gtk::Window> _parent;
-
-	// The handle returned from the Map valid callback signal
-	std::size_t _validCallbackHandle;
+    ui::MouseToolPtr _activeMouseTool;
 
 public:
-	// Constructor, this allocates the GL widget
-	XYWnd(int uniqueId);
+    // Constructor, this allocates the GL widget
+    XYWnd(int uniqueId, wxWindow* parent);
 
-	// Destructor
-	virtual ~XYWnd();
+    // Destructor
+    virtual ~XYWnd();
 
-	int getId() const;
+    int getId() const;
 
-	void queueDraw();
-	Gtk::Widget* getWidget();
+    wxutil::GLWidget* getGLWidget() const { return _wxGLWidget; }
 
-	void setParent(const Glib::RefPtr<Gtk::Window>& parent);
-	const Glib::RefPtr<Gtk::Window>& getParent() const;
+    SelectionTestPtr createSelectionTestForPoint(const Vector2& point);
+    const VolumeTest& getVolumeTest() const;
+    int getDeviceWidth() const;
+    int getDeviceHeight() const;
+    void forceDraw();
+    void queueDraw();
 
-	// Capture and release the selected shader
-	static void captureStates();
-	static void releaseStates();
+    // Capture and release the selected shader
+    static void captureStates();
+    static void releaseStates();
 
-	// Returns the long type string ("XY Top", "YZ Side", "XZ Front") for use in window titles
-	static const std::string getViewTypeTitle(EViewType viewtype);
+    // Returns the long type string ("XY Top", "YZ Side", "XZ Front") for use in window titles
+    static const std::string getViewTypeTitle(EViewType viewtype);
 
-	// Returns the short type string (XY, XZ, YZ)
-	static const std::string getViewTypeStr(EViewType viewtype);
+    // Returns the short type string (XY, XZ, YZ)
+    static const std::string getViewTypeStr(EViewType viewtype);
 
-	void positionView(const Vector3& position);
-	const Vector3& getOrigin();
-	void setOrigin(const Vector3& origin);
-	void scroll(int x, int y);
-	Vector4 getWindowCoordinates();
+    void positionView(const Vector3& position);
+    const Vector3& getOrigin();
+    void setOrigin(const Vector3& origin);
+    void scroll(int x, int y);
+    Vector4 getWindowCoordinates();
 
-	void positionCamera(int x, int y, CamWnd& camwnd);
-	void orientCamera(int x, int y, CamWnd& camwnd);
+    void draw();
+    void drawCameraIcon(const Vector3& origin, const Vector3& angles);
+    void drawBlockGrid();
+    void drawGrid();
 
-	void draw();
-	void drawCameraIcon(const Vector3& origin, const Vector3& angles);
-	void drawBlockGrid();
-	void drawGrid();
+    Vector3 convertXYToWorld(int x, int y);
+    void snapToGrid(Vector3& point);
 
-	void NewBrushDrag_Begin(int x, int y);
-	void NewBrushDrag(int x, int y);
-	void NewBrushDrag_End(int x, int y);
+    void mouseToPoint(int x, int y, Vector3& point);
 
-	void convertXYToWorld(int x, int y, Vector3& point);
-	void snapToGrid(Vector3& point);
+    void beginMove();
+    void endMove();
 
-	void mouseToPoint(int x, int y, Vector3& point);
+    void zoomIn();
+    void zoomOut();
 
-	void updateSelectionBox(const Rectangle& area);
+    void setActive(bool b);
+    bool isActive() const;
 
-	void beginMove();
-	void endMove();
+    void setCursorType(IOrthoView::CursorType type);
 
-	void beginZoom();
-	void endZoom();
+    void updateModelview();
+    void updateProjection();
 
-	void zoomIn();
-	void zoomOut();
+    virtual void setViewType(EViewType n);
+    EViewType getViewType() const;
 
-	void setActive(bool b);
-	bool isActive() const;
+    void setScale(float f);
+    float getScale() const;
 
-	void Clipper_OnLButtonDown(int x, int y);
-	void Clipper_OnLButtonUp(int x, int y);
-	void Clipper_OnMouseMoved(int x, int y);
-	void Clipper_Crosshair_OnMouseMoved(int x, int y);
-	void DropClipPoint(int pointx, int pointy);
+    int getWidth() const;
+    int getHeight() const;
 
-	void chaseMouse();
-	bool chaseMouseMotion(int pointx, int pointy, const unsigned int& state);
+    // greebo: CameraObserver implementation; gets called when the camera is moved
+    void cameraMoved();
 
-	void updateModelview();
-	void updateProjection();
-
-	void EntityCreate_MouseDown(int x, int y);
-	void EntityCreate_MouseMove(int x, int y);
-	void EntityCreate_MouseUp(int x, int y);
-
-	virtual void setViewType(EViewType n);
-	EViewType getViewType() const;
-
-	void setScale(float f);
-	float getScale() const;
-
-	int getWidth() const;
-	int getHeight() const;
-
-	int& dragZoom();
-
-	// The method handling the different mouseUp situations according to <event>
-	void mouseUp(int x, int y, GdkEventButton* event);
-
-	// The method responsible for mouseMove situations according to <event>
-	void mouseMoved(int x, int y, const unsigned int& state);
-
-	// The method handling the different mouseDown situations
-	void mouseDown(int x, int y, GdkEventButton* event);
-	//typedef Member3<XYWnd, int, int, GdkEventButton*, void, &XYWnd::mouseDown> MouseDownCaller;
-
-	// greebo: CameraObserver implementation; gets called when the camera is moved
-	void cameraMoved();
-
-	// greebo: This gets called upon scene change
-	void onSceneGraphChange();
-
-	void saveStateToPath(const std::string& rootPath);
-	void readStateFromPath(const std::string& rootPath);
+    // greebo: This gets called upon scene change
+    void onSceneGraphChange();
 
 protected:
-	// Disconnects all widgets and unsubscribes as observer
-	void destroyXYView();
+    // Disconnects all widgets and unsubscribes as observer
+    void destroyXYView();
 
 private:
-	void onContextMenu();
-	void drawSizeInfo(int nDim1, int nDim2, const Vector3& vMinBounds, const Vector3& vMaxBounds);
+    void clearActiveMouseTool();
+    ui::XYMouseToolEvent createMouseEvent(const Vector2& point, const Vector2& delta = Vector2(0, 0));
 
-	// gtkmm Callbacks
-	bool callbackButtonPress(GdkEventButton* ev);
-	bool callbackButtonRelease(GdkEventButton* ev);
-	void callbackMouseMotion(gdouble x, gdouble y, guint state);
-	bool callbackMouseWheelScroll(GdkEventScroll* ev);
-	void callbackSizeAllocate(Gtk::Allocation& allocation);
-	bool callbackExpose(GdkEventExpose* ev);
-	void callbackMoveDelta(int x, int y, guint state);
-	bool callbackMoveFocusOut(GdkEventFocus* ev);
-	static gboolean	callbackChaseMouse(gpointer data);
-	bool callbackZoomFocusOut(GdkEventFocus* ev);
-	void callbackZoomDelta(int x, int y, guint state);
+    void onContextMenu();
+    void drawSizeInfo(int nDim1, int nDim2, const Vector3& vMinBounds, const Vector3& vMaxBounds);
 
-}; // class XYWnd
+    // callbacks
+    bool checkChaseMouse(int x, int y, unsigned int state);
+    void performChaseMouse();
+    void onIdle(wxIdleEvent& ev);
+
+    // The method responsible for mouseMove situations according to <event>
+    void handleGLMouseUp(wxMouseEvent& ev);
+    void handleGLMouseMotion(int x, int y, unsigned int state, bool isDelta);
+    void handleGLMouseDown(wxMouseEvent& ev);
+
+    void handleActiveMouseToolMotion(int x, int y, bool isDelta);
+
+    // Active mousetools might capture the mouse, this is handled here
+    void handleGLCapturedMouseMotion(int x, int y, unsigned int state);
+
+    // Is called by the DeferredDraw helper
+    void performDeferredDraw();
+
+    // wxGLWidget-attached render method
+    void onRender();
+    void onGLResize(wxSizeEvent& ev);
+    void onGLWindowScroll(wxMouseEvent& ev);
+    void onGLMouseButtonPress(wxMouseEvent& ev);
+    void onGLMouseButtonRelease(wxMouseEvent& ev);
+    //void onGLMouseMove(int x, int y, unsigned int state);
+    void onGLMouseMove(wxMouseEvent& ev);
+};
 
 /**
  * Shared pointer typedefs.
  */
-typedef boost::shared_ptr<XYWnd> XYWndPtr;
-typedef boost::weak_ptr<XYWnd> XYWndWeakPtr;
+typedef std::shared_ptr<XYWnd> XYWndPtr;
+typedef std::weak_ptr<XYWnd> XYWndWeakPtr;
 
-#endif /*XYWND_H_*/
+}

@@ -7,6 +7,7 @@
 #include "ipreferencesystem.h"
 #include "imainframe.h"
 #include "ieventmanager.h"
+#include "iradiant.h"
 #include "igame.h"
 
 #include "xmlutil/Node.h"
@@ -19,7 +20,7 @@
 #include "debugging/ScopedDebugTimer.h"
 
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/bind.hpp>
+#include <functional>
 
 namespace {
 	const char* TEXTURE_PREFIX = "textures/";
@@ -43,7 +44,8 @@ namespace shaders {
 Doom3ShaderSystem::Doom3ShaderSystem() :
 	_enableActiveUpdates(true),
 	_realised(false),
-	_observers(getName())
+	_observers(getName()),
+	_currentOperation(NULL)
 {}
 
 void Doom3ShaderSystem::construct()
@@ -89,17 +91,23 @@ void Doom3ShaderSystem::loadMaterialFiles()
 	std::string extension = nlShaderExt[0].getContent();
 
 	// Load each file from the global filesystem
-	ShaderFileLoader loader(sPath);
+	ShaderFileLoader loader(sPath, _currentOperation);
 	{
 		ScopedDebugTimer timer("ShaderFiles parsed: ");
-		GlobalFileSystem().forEachFile(sPath, extension, loader, 0);
+        GlobalFileSystem().forEachFile(sPath, extension, [&](const std::string& filename)
+        {
+            loader.addFile(filename);
+        }, 0);
+		loader.parseFiles();
 	}
 
 	rMessage() << _library->getNumShaders() << " shaders found." << std::endl;
 }
 
-void Doom3ShaderSystem::realise() {
-	if (!_realised) {
+void Doom3ShaderSystem::realise()
+{
+	if (!_realised) 
+	{
 		loadMaterialFiles();
 		_observers.realise();
 		_realised = true;
@@ -258,14 +266,13 @@ void Doom3ShaderSystem::foreachShader(ShaderVisitor& visitor) {
 	_library->foreachShader(visitor);
 }
 
-TexturePtr Doom3ShaderSystem::loadTextureFromFile(const std::string& filename,
-												  const std::string& moduleNames)
+TexturePtr Doom3ShaderSystem::loadTextureFromFile(const std::string& filename)
 {
 	// Remove any unused Textures before allocating new ones.
 	_textureManager->checkBindings();
 
 	// Pass the call to the library
-	return _library->loadTextureFromFile(filename, moduleNames);
+	return _library->loadTextureFromFile(filename);
 }
 
 IShaderExpressionPtr Doom3ShaderSystem::createShaderExpressionFromString(const std::string& exprStr)
@@ -296,6 +303,7 @@ void Doom3ShaderSystem::refreshShadersCmd(const cmd::ArgumentList& args)
 	// Reload the Shadersystem, this will also trigger an 
 	// OpenGLRenderSystem unrealise/realise sequence as the rendersystem
 	// is attached to this class as Observer
+	// We can't do this refresh() operation in a thread it seems due to context binding
 	refresh();
 
 	GlobalMainFrame().updateAllWindows();
@@ -323,7 +331,8 @@ void Doom3ShaderSystem::initialiseModule(const ApplicationContext& ctx)
 {
 	rMessage() << getName() << "::initialiseModule called" << std::endl;
 
-	GlobalCommandSystem().addCommand("RefreshShaders", boost::bind(&Doom3ShaderSystem::refreshShadersCmd, this, _1));
+	GlobalCommandSystem().addCommand("RefreshShaders", 
+        std::bind(&Doom3ShaderSystem::refreshShadersCmd, this, std::placeholders::_1));
 	GlobalEventManager().addCommand("RefreshShaders", "RefreshShaders");
 
 	construct();
@@ -511,7 +520,7 @@ shaders::Doom3ShaderSystemPtr GetShaderSystem() {
 	RegisterableModulePtr modulePtr(module::GlobalModuleRegistry().getModule(MODULE_SHADERSYSTEM));
 
 	// static_cast it onto our shadersystem type
-	return boost::static_pointer_cast<shaders::Doom3ShaderSystem>(modulePtr);
+	return std::static_pointer_cast<shaders::Doom3ShaderSystem>(modulePtr);
 }
 
 shaders::ShaderLibrary& GetShaderLibrary() {

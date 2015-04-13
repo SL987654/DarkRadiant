@@ -15,7 +15,7 @@
 #include "shaderlib.h"
 #include "gamelib.h"
 #include "string/string.h"
-#include "gtkutil/dialog/MessageBox.h"
+#include "wxutil/dialog/MessageBox.h"
 
 #include "registry/registry.h"
 #include "brush/Brush.h"
@@ -28,12 +28,12 @@
 #include "selection/algorithm/General.h"
 #include "map/MapResource.h"
 
-#include <boost/shared_ptr.hpp>
+#include <memory>
 
 namespace map {
 
     namespace {
-        typedef boost::shared_ptr<RegionManager> RegionManagerPtr;
+        typedef std::shared_ptr<RegionManager> RegionManagerPtr;
         const std::string GKEY_PLAYER_START_ECLASS = "/mapFormat/playerStartPoint";
 
         class AABBCollectorVisible :
@@ -181,13 +181,13 @@ void RegionManager::addRegionBrushes()
     // Create the info_player_start entity
     _playerStart = GlobalEntityCreator().createEntity(playerStart);
 
-    CamWndPtr camWnd = GlobalCamera().getActiveCamWnd();
+    ui::CamWndPtr camWnd = GlobalCamera().getActiveCamWnd();
 
     if (camWnd != NULL) {
         // Obtain the camera origin = player start point
         Vector3 camOrigin = camWnd->getCameraOrigin();
         // Get the start angle of the player start point
-        float angle = camWnd->getCameraAngles()[CAMERA_YAW];
+        float angle = camWnd->getCameraAngles()[ui::CAMERA_YAW];
 
         // Check if the camera origin is within the region
         if (_bounds.intersects(camOrigin))
@@ -199,9 +199,8 @@ void RegionManager::addRegionBrushes()
                                                   string::to_string(angle));
         }
         else {
-            gtkutil::MessageBox::ShowError(
-                _("Warning: Camera not within region, can't set info_player_start."),
-                GlobalMainFrame().getTopLevelWindow()
+            wxutil::Messagebox::ShowError(
+                _("Warning: Camera not within region, can't set info_player_start.")
             );
         }
     }
@@ -273,7 +272,7 @@ void RegionManager::disableRegion(const cmd::ArgumentList& args) {
 
 void RegionManager::setRegionXY(const cmd::ArgumentList& args) {
     // Obtain the current XY orthoview, if there is one
-    XYWndPtr xyWnd = GlobalXYWnd().getView(XY);
+    ui::XYWndPtr xyWnd = GlobalXYWnd().getView(XY);
 
     if (xyWnd) {
         Vector2 topLeft(
@@ -290,9 +289,8 @@ void RegionManager::setRegionXY(const cmd::ArgumentList& args) {
         GlobalRegion().setRegionFromXY(topLeft, lowerRight);
     }
     else {
-        gtkutil::MessageBox::ShowError(
-            _("Could not set Region: XY Top View not found."),
-            GlobalMainFrame().getTopLevelWindow());
+        wxutil::Messagebox::ShowError(
+            _("Could not set Region: XY Top View not found."));
         GlobalRegion().disable();
     }
     SceneChangeNotify();
@@ -318,9 +316,8 @@ void RegionManager::setRegionFromBrush(const cmd::ArgumentList& args) {
         SceneChangeNotify();
     }
     else {
-        gtkutil::MessageBox::ShowError(
-            _("Could not set Region: please select a single Brush."),
-            GlobalMainFrame().getTopLevelWindow());
+        wxutil::Messagebox::ShowError(
+            _("Could not set Region: please select a single Brush."));
         GlobalRegion().disable();
     }
 }
@@ -345,15 +342,13 @@ void RegionManager::setRegionFromSelection(const cmd::ArgumentList& args) {
             SceneChangeNotify();
         }
         else {
-            gtkutil::MessageBox::ShowError(_("This command is not available in component mode."),
-                                 GlobalMainFrame().getTopLevelWindow());
+            wxutil::Messagebox::ShowError(_("This command is not available in component mode."));
             GlobalRegion().disable();
         }
     }
     else {
-        gtkutil::MessageBox::ShowError(
-            _("Could not set Region: nothing selected."),
-            GlobalMainFrame().getTopLevelWindow());
+        wxutil::Messagebox::ShowError(
+            _("Could not set Region: nothing selected."));
         GlobalRegion().disable();
     }
 }

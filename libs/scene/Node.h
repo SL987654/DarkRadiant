@@ -8,19 +8,17 @@
 #include "math/AABB.h"
 #include "math/Matrix4.h"
 #include "generic/callback.h"
-#include <boost/enable_shared_from_this.hpp>
-#include <boost/weak_ptr.hpp>
 
 namespace scene
 {
 
 class Graph;
-typedef boost::weak_ptr<Graph> GraphWeakPtr;
+typedef std::weak_ptr<Graph> GraphWeakPtr;
 
 /// Main implementation of INode
 class Node :
 	public virtual INode,
-	public boost::enable_shared_from_this<Node>
+	public std::enable_shared_from_this<Node>
 {
 public:
 	enum {
@@ -64,7 +62,7 @@ private:
 
 protected:
 	// If this node is attached to a parent entity, this is the reference to it
-	IRenderEntityPtr _renderEntity;
+    IRenderEntity* _renderEntity;
 
 	// The render system for passing down the child hierarchy later on
 	RenderSystemWeakPtr _renderSystem;
@@ -75,6 +73,8 @@ protected:
 public:
 	Node();
 	Node(const Node& other);
+
+    virtual ~Node() {}
 
 	static void resetIds();
 	static unsigned long getNewId();
@@ -152,8 +152,8 @@ public:
 	virtual void onChildRemoved(const INodePtr& child);
 
 	// Gets called when this node is inserted into a scene graph
-	virtual void onInsertIntoScene();
-	virtual void onRemoveFromScene();
+	virtual void onInsertIntoScene(IMapRootNode& root) override;
+	virtual void onRemoveFromScene(IMapRootNode& root) override;
 
 	// Returns TRUE if this node is inserted in the scene, FALSE otherwise
 	bool inScene() const
@@ -171,13 +171,13 @@ public:
 	// Returns a shared reference to this node
 	scene::INodePtr getSelf();
 
-	const IRenderEntityPtr& getRenderEntity() const
+	IRenderEntity* getRenderEntity() const override
 	{
 		return _renderEntity;
 	}
 
 	// Set the render entity this node is attached to
-	void setRenderEntity(const IRenderEntityPtr& entity)
+	void setRenderEntity(IRenderEntity* entity) override
 	{
 		_renderEntity = entity;
 	}
@@ -192,8 +192,8 @@ protected:
 
 	TraversableNodeSet& getTraversable();
 
-	virtual void instanceAttach(MapFile* mapfile);
-	virtual void instanceDetach(MapFile* mapfile);
+    virtual void connectUndoSystem(IMapFileChangeTracker& changeTracker);
+    virtual void disconnectUndoSystem(IMapFileChangeTracker& changeTracker);
 
 	// Clears the TraversableNodeSet
 	virtual void removeAllChildNodes();
@@ -204,6 +204,6 @@ private:
 	void evaluateTransform() const;
 };
 
-typedef boost::shared_ptr<Node> NodePtr;
+typedef std::shared_ptr<Node> NodePtr;
 
 } // namespace scene

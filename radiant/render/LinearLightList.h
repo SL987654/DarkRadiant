@@ -2,7 +2,7 @@
 
 #include "irender.h"
 #include <list>
-#include <boost/function/function_fwd.hpp>
+#include <functional>
 
 namespace render
 {
@@ -20,7 +20,7 @@ class LinearLightList :
 	public LightList
 {
 public:
-	typedef boost::function<void()> VoidCallback;
+	typedef std::function<void()> VoidCallback;
 
 private:
 

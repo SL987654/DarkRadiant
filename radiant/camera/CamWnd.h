@@ -1,97 +1,104 @@
 #pragma once
 
 #include "iscenegraph.h"
+#include "imousetool.h"
+#include "icameraview.h"
 #include "irender.h"
-#include "gtkutil/GLWidget.h"
-#include "gtkutil/DeferredMotion.h"
-#include "gtkutil/FreezePointer.h"
-#include "gtkutil/WindowPosition.h"
-#include "gtkutil/GladeWidgetHolder.h"
-#include "gtkutil/Timer.h"
-#include "selection/RadiantWindowObserver.h"
+#include "wxutil/GLWidget.h"
+#include "wxutil/FreezePointer.h"
+#include "wxutil/WindowPosition.h"
+#include "wxutil/XmlResourceBasedWidget.h"
+#include "wxutil/event/KeyEventFilter.h"
 
+#include <wx/wxprec.h>
+#include <wx/glcanvas.h>
+#include <wx/timer.h>
 #include "render/View.h"
 #include "map/DeferredDraw.h"
 
 #include "RadiantCameraView.h"
 #include "Camera.h"
 
-#include <boost/shared_ptr.hpp>
+#include "selection/Rectangle.h"
+#include <memory>
 #include <boost/noncopyable.hpp>
+#include <sigc++/connection.h>
+#include "tools/CameraMouseToolEvent.h"
 
 const int CAMWND_MINSIZE_X = 240;
 const int CAMWND_MINSIZE_Y = 200;
 
 class SelectionTest;
 
+namespace ui
+{
+
 class CamWnd :
+    public ICameraView,
 	public scene::Graph::Observer,
 	public boost::noncopyable,
     public sigc::trackable,
-    private gtkutil::GladeWidgetHolder
+	private wxutil::XmlResourceBasedWidget,
+	public wxEvtHandler
 {
 private:
-    // Outer GUI widget (containing toolbar and GL widget)
-    Gtk::Container* _mainWidget;
+	// Overall panel including toolbar and GL widget
+	wxPanel* _mainWxWidget;
 
 	// The ID of this window
 	int _id;
 
 	static int _maxId;
 
-	render::View m_view;
+	render::View _view;
 
 	// The contained camera
-	Camera m_Camera;
+	Camera _camera;
 
-	RadiantCameraView m_cameraview;
+	RadiantCameraView _cameraView;
 
-	sigc::connection m_freemove_handle_focusout;
+	static ShaderPtr _faceHighlightShader;
+	static ShaderPtr _primitiveHighlightShader;
 
-	static ShaderPtr m_state_select1;
-	static ShaderPtr m_state_select2;
-
-	gtkutil::FreezePointer _freezePointer;
+	wxutil::FreezePointer _freezePointer;
 
 	// Is true during an active drawing process
-	bool m_drawing;
+	bool _drawing;
 
-	bool m_bFreeMove;
+	bool _freeMoveEnabled;
 
     // The GL widget
-	gtkutil::GLWidget* _camGLWidget;
-	Glib::RefPtr<Gtk::Window> _parentWindow;
+	wxutil::GLWidget* _wxGLWidget;
 
 	std::size_t _mapValidHandle;
 
-	Rectangle _dragRectangle;
+	wxTimer _timer;
+    bool _timerLock; // to avoid double-timer-firings
 
-	gtkutil::Timer _timer;
+	DeferredDraw _deferredDraw;
 
-	// Used in Windows only
-	sigc::connection _windowStateConn;
+	sigc::connection _glExtensionsInitialisedNotifier;
+
+    ui::MouseToolPtr _activeMouseTool;
+
+    wxutil::KeyEventFilterPtr _escapeListener;
 
 public:
-	SelectionSystemWindowObserver* m_window_observer;
-
-	DeferredDraw m_deferredDraw;
-	gtkutil::DeferredMotion m_deferred_motion;
-
-	sigc::connection m_selection_button_press_handler;
-	sigc::connection m_selection_button_release_handler;
-	sigc::connection m_selection_motion_handler;
-	sigc::connection m_freelook_button_press_handler;
-	sigc::connection m_freelook_button_release_handler;
-
 	// Constructor and destructor
-	CamWnd();
+	CamWnd(wxWindow* parent);
 
 	virtual ~CamWnd();
 
 	// The unique ID of this camwindow
 	int getId();
 
-	void queueDraw();
+    // ICameraView implementation
+    SelectionTestPtr createSelectionTestForPoint(const Vector2& point);
+    const VolumeTest& getVolumeTest() const;
+    int getDeviceWidth() const;
+    int getDeviceHeight() const;
+    void queueDraw();
+
 	void draw();
 	void update();
 
@@ -103,13 +110,13 @@ public:
 
 	Camera& getCamera();
 
-	void updateSelectionBox(const Rectangle& area);
-
 	Vector3 getCameraOrigin() const;
 	void setCameraOrigin(const Vector3& origin);
 
 	Vector3 getCameraAngles() const;
 	void setCameraAngles(const Vector3& angles);
+
+    const Frustum& getViewFrustum() const;
 
 	// greebo: This measures the rendering time during a 360° turn of the camera.
 	void benchmark();
@@ -117,13 +124,8 @@ public:
 	// This tries to find brushes above/below the current camera position and moves the view upwards/downwards
 	void changeFloor(const bool up);
 
-	Gtk::Widget* getWidget() const;
-	const Glib::RefPtr<Gtk::Window>& getParent() const;
-
-	/**
-	 * Set the immediate parent window of this CamWnd.
-	 */
-	void setContainer(const Glib::RefPtr<Gtk::Window>& newParent);
+	wxutil::GLWidget* getwxGLWidget() const { return _wxGLWidget; }
+	wxWindow* getMainWidget() const;
 
 	void enableFreeMove();
 	void disableFreeMove();
@@ -151,45 +153,49 @@ private:
     void constructGUIComponents();
     void constructToolbar();
     void setFarClipButtonSensitivity();
-    void onRenderModeButtonsChanged();
+    void onRenderModeButtonsChanged(wxCommandEvent& ev);
     void updateActiveRenderModeButton();
+	void onFarClipPlaneOutClick(wxCommandEvent& ev);
+	void onFarClipPlaneInClick(wxCommandEvent& ev);
+	void onStartTimeButtonClick(wxCommandEvent& ev);
+	void onStopTimeButtonClick(wxCommandEvent& ev);
 
 	void Cam_Draw();
+	void onRender();
 	void drawTime();
 
-	void onSizeAllocate(Gtk::Allocation& allocation);
-	bool onExpose(GdkEventExpose* ev);
+	void performDeferredDraw();
 
-	bool onMouseScroll(GdkEventScroll* ev);
+    ui::CameraMouseToolEvent createMouseEvent(const Vector2& point, const Vector2& delta = Vector2(0, 0));
 
-	bool enableFreelookButtonPress(GdkEventButton* ev);
-	bool disableFreelookButtonPress(GdkEventButton* ev);
-	bool disableFreelookButtonRelease(GdkEventButton* ev);
+	void onGLResize(wxSizeEvent& ev);
 
-	bool freeMoveFocusOut(GdkEventFocus* ev);
+	void onMouseScroll(wxMouseEvent& ev);
 
-	bool selectionButtonPress(GdkEventButton* ev, SelectionSystemWindowObserver* observer);
-	bool selectionButtonRelease(GdkEventButton* ev, SelectionSystemWindowObserver* observer);
+    void onGLMouseButtonPress(wxMouseEvent& ev);
+	void onGLMouseButtonRelease(wxMouseEvent& ev);
+    void onGLMouseMove(wxMouseEvent& ev);
 
-	bool selectionButtonPressFreemove(GdkEventButton* ev, SelectionSystemWindowObserver* observer);
-	bool selectionButtonReleaseFreemove(GdkEventButton* ev, SelectionSystemWindowObserver* observer);
-	bool selectionMotionFreemove(GdkEventMotion* ev, SelectionSystemWindowObserver* observer);
+    // Regular mouse move, when no mousetool is active
+	void handleGLMouseMove(int x, int y, unsigned int state);
+    
+    // Mouse motion callback when an active tool is capturing the mouse
+    void handleGLCapturedMouseMove(int x, int y, unsigned int state);
 
-	void _onDeferredMouseMotion(gdouble x, gdouble y, guint state);
-	void _onFreelookMotion(int x, int y, guint state);
+    // Mouse motion callback used in freelook mode only, processes deltas
+    void handleGLMouseMoveFreeMoveDelta(int x, int y, unsigned int state);
+    
+	void onGLExtensionsInitialised();
 
-	static gboolean _onFrame(gpointer data);
+	void onFrame(wxTimerEvent& ev);
 
-protected:
-	// Used in Windows only to fix camera views going grey
-	void connectWindowStateEvent(Gtk::Window& window);
-	void disconnectWindowStateEvent();
-
-	bool onWindowStateEvent(GdkEventWindowState* ev); // only used in Windows
+    void clearActiveMouseTool();
 };
 
 /**
  * Shared pointer typedef.
  */
-typedef boost::shared_ptr<CamWnd> CamWndPtr;
-typedef boost::weak_ptr<CamWnd> CamWndWeakPtr;
+typedef std::shared_ptr<CamWnd> CamWndPtr;
+typedef std::weak_ptr<CamWnd> CamWndWeakPtr;
+
+} // namespace

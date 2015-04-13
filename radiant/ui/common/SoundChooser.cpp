@@ -4,19 +4,14 @@
 #include "iuimanager.h"
 #include "isound.h"
 #include "imainframe.h"
-#include "gtkutil/IconTextColumn.h"
-#include "gtkutil/ScrolledFrame.h"
-#include "gtkutil/RightAlignment.h"
-#include "gtkutil/TreeModel.h"
-#include "gtkutil/MultiMonitor.h"
-#include "gtkutil/VFSTreePopulator.h"
 
-#include <gtkmm/button.h>
-#include <gtkmm/treeview.h>
-#include <gtkmm/box.h>
-#include <gtkmm/stock.h>
+#include "wxutil/VFSTreePopulator.h"
+#include "debugging/ScopedDebugTimer.h"
 
-#include <boost/bind.hpp>
+#include <wx/sizer.h>
+#include <wx/artprov.h>
+
+#include <functional>
 
 namespace ui
 {
@@ -27,146 +22,197 @@ namespace
 	const char* const FOLDER_ICON = "folder16.png";
 }
 
-// Constructor
-SoundChooser::SoundChooser() :
-	BlockingTransientWindow(_("Choose sound"), GlobalMainFrame().getTopLevelWindow()),
-	_treeStore(Gtk::TreeStore::create(_columns)),
-	_treeView(NULL),
-	_preview(Gtk::manage(new SoundShaderPreview))
-{
-	set_border_width(12);
-	set_type_hint(Gdk::WINDOW_TYPE_HINT_DIALOG);
-
-	// Set the default size of the window
-	Gdk::Rectangle rect = gtkutil::MultiMonitor::getMonitorForWindow(GlobalMainFrame().getTopLevelWindow());
-	set_default_size(rect.get_width() / 2, rect.get_height() / 2);
-
-	// Main vbox
-	Gtk::VBox* vbx = Gtk::manage(new Gtk::VBox(false, 12));
-
-    vbx->pack_start(createTreeView(), true, true, 0);
-    vbx->pack_start(*_preview, false, false, 0);
-    vbx->pack_start(createButtons(), false, false, 0);
-
-    add(*vbx);
-}
-
-namespace
-{
-
 /**
- * Visitor class to enumerate sound shaders and add them to the tree store.
- */
+* Visitor class to enumerate sound shaders and add them to the tree store.
+*/
 class SoundShaderPopulator :
-	public gtkutil::VFSTreePopulator,
-	public gtkutil::VFSTreePopulator::Visitor
+    public wxutil::VFSTreePopulator,
+    public wxutil::VFSTreePopulator::Visitor
 {
 private:
-	const SoundChooser::TreeColumns& _columns;
+    const SoundChooser::TreeColumns& _columns;
+
+    wxIcon _shaderIcon;
+    wxIcon _folderIcon;
 public:
-	// Constructor
-	SoundShaderPopulator(const Glib::RefPtr<Gtk::TreeStore>& treeStore,
-						 const SoundChooser::TreeColumns& columns) :
-		gtkutil::VFSTreePopulator(treeStore),
-		_columns(columns)
-	{}
+    // Constructor
+    SoundShaderPopulator(wxutil::TreeModel::Ptr treeStore,
+                         const SoundChooser::TreeColumns& columns) :
+                         VFSTreePopulator(treeStore),
+                         _columns(columns)
+    {
+        _shaderIcon.CopyFromBitmap(wxArtProvider::GetBitmap(GlobalUIManager().ArtIdPrefix() + SHADER_ICON));
+        _folderIcon.CopyFromBitmap(wxArtProvider::GetBitmap(GlobalUIManager().ArtIdPrefix() + FOLDER_ICON));
+    }
 
     // Invoked for each sound shader
-	void addShader(const ISoundShader& shader)
-	{
-		// Construct a "path" into the sound shader tree,
-		// using the mod name as first folder level
-		// angua: if there is a displayFolder present, put it between the mod name and the shader name
-		std::string displayFolder = shader.getDisplayFolder();
-		if (!displayFolder.empty())
-		{
-			addPath(shader.getModName() + "/" + displayFolder + "/" + shader.getName());
-		}
-		else
-		{
-			addPath(shader.getModName() + "/" + shader.getName());
-		}
-	}
+    void addShader(const ISoundShader& shader)
+    {
+        // Construct a "path" into the sound shader tree,
+        // using the mod name as first folder level
+        // angua: if there is a displayFolder present, put it between the mod name and the shader name
+        std::string displayFolder = shader.getDisplayFolder();
+        if (!displayFolder.empty())
+        {
+            addPath(shader.getModName() + "/" + displayFolder + "/" + shader.getName());
+        }
+        else
+        {
+            addPath(shader.getModName() + "/" + shader.getName());
+        }
+    }
 
-	// Required visit function
-	void visit(const Glib::RefPtr<Gtk::TreeStore>& store,
-			   const Gtk::TreeModel::iterator& iter,
-			   const std::string& path, bool isExplicit)
-	{
-		Gtk::TreeModel::Row row = *iter;
+    // Required visit function
+    void visit(wxutil::TreeModel& store, wxutil::TreeModel::Row& row,
+               const std::string& path, bool isExplicit)
+    {
+        // Get the display name by stripping off everything before the last slash
+        std::string displayName = path.substr(path.rfind('/') + 1);
 
-		// Get the display name by stripping off everything before the last slash
-		std::string displayName = path.substr(path.rfind('/') + 1);
+        // Fill in the column values
+        row[_columns.displayName] = wxVariant(
+            wxDataViewIconText(displayName, isExplicit ? _shaderIcon : _folderIcon)
+            );
 
-		// Fill in the column values
-		row[_columns.displayName] = displayName;
-		// angua: we need to remove mod name and displayfolder
-		// it's not possible right now to have slashes in the shader name
-		row[_columns.shaderName] = displayName;
-		row[_columns.isFolder] = !isExplicit;
-		row[_columns.icon] = GlobalUIManager().getLocalPixbuf(isExplicit ? SHADER_ICON : FOLDER_ICON);
-	}
+        // angua: we need to remove mod name and displayfolder
+        // it's not possible right now to have slashes in the shader name
+        row[_columns.shaderName] = displayName;
+        row[_columns.isFolder] = !isExplicit;
+    }
 };
 
 
-} // namespace
+// Local class for loading sound shader definitions in a separate thread
+class SoundChooser::ThreadedSoundShaderLoader :
+    public wxThread
+{
+    // Column specification struct
+    const SoundChooser::TreeColumns& _columns;
+
+    // The tree store to populate. We must operate on our own tree store, since
+    // updating the EntityClassChooser's tree store from a different thread
+    // wouldn't be safe
+    wxutil::TreeModel::Ptr _treeStore;
+
+    // The class to be notified on finish
+    wxEvtHandler* _finishedHandler;
+
+public:
+
+    // Construct and initialise variables
+    ThreadedSoundShaderLoader(const SoundChooser::TreeColumns& cols,
+                              wxEvtHandler* finishedHandler) :
+                              wxThread(wxTHREAD_JOINABLE),
+        _columns(cols),
+        _finishedHandler(finishedHandler)
+    {}
+
+    ~ThreadedSoundShaderLoader()
+    {
+        if (IsRunning())
+        {
+            Delete();
+        }
+    }
+
+    // The worker function that will execute in the thread
+    ExitCode Entry()
+    {
+        ScopedDebugTimer timer("ThreadedSoundShaderLoader::run()");
+
+        // Create new treestoree
+        _treeStore = new wxutil::TreeModel(_columns);
+
+        // Populate it with the list of sound shaders by using a visitor class.
+        SoundShaderPopulator visitor(_treeStore, _columns);
+        
+        // Visit all sound shaders and collect them for later insertion
+        GlobalSoundManager().forEachShader(
+            std::bind(&SoundShaderPopulator::addShader, std::ref(visitor), std::placeholders::_1)
+        );
+
+        if (TestDestroy()) return static_cast<ExitCode>(0);
+
+        // Let the populator iterate over all collected elements
+        // and insert them in the treestore
+        visitor.forEachNode(visitor);
+
+        if (TestDestroy()) return static_cast<ExitCode>(0);
+
+        // angua: Ensure sound shaders are sorted before giving them to the tree view
+        _treeStore->SortModelFoldersFirst(_columns.displayName, _columns.isFolder);
+
+        if (!TestDestroy())
+        {
+            wxQueueEvent(_finishedHandler, new wxutil::TreeModel::PopulationFinishedEvent(_treeStore));
+        }
+
+        return static_cast<ExitCode>(0);
+    }
+};
+
+// Constructor
+SoundChooser::SoundChooser() :
+	DialogBase(_("Choose sound")),
+	_treeStore(NULL),
+	_treeView(NULL),
+	_preview(new SoundShaderPreview(this)),
+    _loadingShaders(false)
+{
+	SetSizer(new wxBoxSizer(wxVERTICAL));
+	
+	GetSizer()->Add(createTreeView(this), 1, wxEXPAND | wxALL, 12);
+    GetSizer()->Add(_preview, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 12);
+	GetSizer()->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxALIGN_RIGHT | wxBOTTOM | wxLEFT | wxRIGHT, 12);
+
+	FitToScreen(0.5f, 0.5f);
+
+    // Connect the finish callback to load the treestore
+    Connect(wxutil::EV_TREEMODEL_POPULATION_FINISHED,
+            TreeModelPopulationFinishedHandler(SoundChooser::_onTreeStorePopulationFinished), NULL, this);
+
+    // Load the shaders
+    loadSoundShaders();
+}
 
 // Create the tree view
-Gtk::Widget& SoundChooser::createTreeView()
+wxWindow* SoundChooser::createTreeView(wxWindow* parent)
 {
-	// Tree view with single text icon column
-	_treeView = Gtk::manage(new Gtk::TreeView(_treeStore));
+    _treeStore = new wxutil::TreeModel(_columns);
 
-    // angua: Ensure sound shaders are sorted before giving them to the tree view
-    gtkutil::TreeModel::applyFoldersFirstSortFunc(
-        _treeStore, _columns.displayName, _columns.isFolder
-    );
+    // Tree view with single text icon column
+	_treeView = wxutil::TreeView::CreateWithModel(parent, _treeStore);
 
+    _treeView->AppendIconTextColumn(_("Soundshader"), _columns.displayName.getColumnIndex(), 
+		wxDATAVIEW_CELL_INERT, wxCOL_WIDTH_AUTOSIZE, wxALIGN_NOT, wxDATAVIEW_COL_SORTABLE);
 
-	_treeView->append_column(
-		*Gtk::manage(new gtkutil::IconTextColumn(_("Soundshader"), _columns.displayName, _columns.icon))
-	);
+	// Use the TreeModel's full string search function
+	_treeView->AddSearchColumn(_columns.displayName);
 
-	_treeSelection = _treeView->get_selection();
-	_treeSelection->signal_changed().connect(sigc::mem_fun(*this, &SoundChooser::_onSelectionChange));
+	// Get selection and connect the changed callback
+	_treeView->Connect(wxEVT_DATAVIEW_SELECTION_CHANGED, 
+		wxDataViewEventHandler(SoundChooser::_onSelectionChange), NULL, this);
 
-	// Populate the tree store with sound shaders, using a VFS tree populator
-	SoundShaderPopulator pop(_treeStore, _columns);
-
-	// Visit all sound shaders and collect them for later insertion
-	GlobalSoundManager().forEachShader(
-        boost::bind(&SoundShaderPopulator::addShader, boost::ref(pop), _1)
-    );
-
-	// Let the populator iterate over all collected elements
-	// and insert them in the treestore
-	pop.forEachNode(pop);
-
-	return *Gtk::manage(new gtkutil::ScrolledFrame(*_treeView));
+	return _treeView;
 }
 
-// Create buttons panel
-Gtk::Widget& SoundChooser::createButtons()
+void SoundChooser::loadSoundShaders()
 {
-	Gtk::HBox* hbx = Gtk::manage(new Gtk::HBox(false, 6));
+    // Clear the tree and display a new item
+    _treeStore->Clear();
 
-	Gtk::Button* okButton = Gtk::manage(new Gtk::Button(Gtk::Stock::OK));
-	Gtk::Button* cancelButton = Gtk::manage(new Gtk::Button(Gtk::Stock::CANCEL));
+    wxutil::TreeModel::Row row = _treeStore->AddItem();
+    row[_columns.displayName] = wxVariant(wxDataViewIconText(_("Loading...")));
+    row[_columns.shaderName] = wxString();
+    row[_columns.isFolder] = false;
 
-	okButton->signal_clicked().connect(sigc::mem_fun(*this, &SoundChooser::_onOK));
-	cancelButton->signal_clicked().connect(sigc::mem_fun(*this, &SoundChooser::_onCancel));
+    row.SendItemAdded();
 
-	hbx->pack_end(*okButton, false, false, 0);
-	hbx->pack_end(*cancelButton, false, false, 0);
+    _loadingShaders = true;
 
-	return *Gtk::manage(new gtkutil::RightAlignment(*hbx));
-}
-
-void SoundChooser::_onDeleteEvent()
-{
-	_selectedShader.clear();
-
-	BlockingTransientWindow::_onDeleteEvent();
+    // Spawn a new thread to load the items
+    _shaderLoader.reset(new ThreadedSoundShaderLoader(_columns, this));
+    _shaderLoader->Run();
 }
 
 const std::string& SoundChooser::getSelectedShader() const
@@ -177,42 +223,108 @@ const std::string& SoundChooser::getSelectedShader() const
 // Set the selected sound shader, and focuses the treeview to the new selection
 void SoundChooser::setSelectedShader(const std::string& shader)
 {
-	if (!gtkutil::TreeModel::findAndSelectString(_treeView, shader, _columns.shaderName))
-	{
-		_treeSelection->unselect_all();
-	}
+    // Select immediately if possible, otherwise remember class name for later
+    // selection
+    if (!_loadingShaders)
+    {
+        wxDataViewItem item = _treeStore->FindString(shader, _columns.shaderName);
+
+        if (item.IsOk())
+        {
+            _treeView->Select(item);
+            _treeView->EnsureVisible(item);
+            handleSelectionChange();
+
+            _shaderToSelect.clear();
+
+            return;
+        }
+    }
+
+    // Remember this for later code
+    _shaderToSelect = shader;
 }
 
-void SoundChooser::_onOK()
+void SoundChooser::handleSelectionChange()
 {
-	destroy();
+    wxDataViewItem item = _treeView->GetSelection();
+
+    if (item.IsOk())
+    {
+        wxutil::TreeModel::Row row(item, *_treeStore);
+
+        bool isFolder = row[_columns.isFolder].getBool();
+
+        _selectedShader = isFolder ? "" : static_cast<std::string>(row[_columns.shaderName]);
+    }
+    else
+    {
+        _selectedShader.clear();
+    }
+
+    // Notify the preview widget about the change
+    _preview->setSoundShader(_selectedShader);
 }
 
-void SoundChooser::_onCancel()
+void SoundChooser::_onSelectionChange(wxDataViewEvent& ev)
 {
-	_selectedShader.clear();
-	destroy();
+    handleSelectionChange();
 }
 
-void SoundChooser::_onSelectionChange()
+void SoundChooser::setTreeViewModel()
 {
-	Gtk::TreeModel::iterator iter = _treeSelection->get_selected();
+    _treeView->AssociateModel(_treeStore.get());
 
-	if (iter)
-	{
-		Gtk::TreeModel::Row row = *iter;
+    // Trigger a column size event on the first-level row
+    _treeView->TriggerColumnSizeEvent();
 
-		bool isFolder = row[_columns.isFolder];
+    // Pre-select the given class if requested by setSelectedShader()
+    if (!_shaderToSelect.empty())
+    {
+        assert(_treeStore);
+        setSelectedShader(_shaderToSelect);
+    }
+}
 
-		_selectedShader = isFolder ? "" : std::string(row[_columns.shaderName]);
-	}
-	else
+void SoundChooser::_onTreeStorePopulationFinished(wxutil::TreeModel::PopulationFinishedEvent& ev)
+{
+    _loadingShaders = false;
+
+    _treeStore = ev.GetTreeModel();
+    setTreeViewModel();
+}
+
+int SoundChooser::ShowModal()
+{
+	int returnCode = DialogBase::ShowModal();
+
+	if (returnCode != wxID_OK)
 	{
 		_selectedShader.clear();
 	}
 
-	// Notify the preview widget about the change
-	_preview->setSoundShader(_selectedShader);
+	return returnCode;
+}
+
+std::string SoundChooser::ChooseSound(const std::string& preSelectedShader)
+{
+	SoundChooser* chooser = new SoundChooser;
+
+	if (!preSelectedShader.empty())
+	{
+		chooser->setSelectedShader(preSelectedShader);
+	}
+
+	std::string selectedShader;
+
+	if (chooser->ShowModal() == wxID_OK)
+	{
+		selectedShader = chooser->getSelectedShader();
+	}
+
+	chooser->Destroy();
+
+	return selectedShader;
 }
 
 } // namespace

@@ -6,8 +6,7 @@
 #include "modulesystem/StaticModule.h"
 #include "backend/GLProgramFactory.h"
 
-#include <boost/weak_ptr.hpp>
-#include <boost/bind.hpp>
+#include <functional>
 
 namespace render {
 
@@ -81,6 +80,15 @@ ShaderPtr OpenGLRenderSystem::capture(const std::string& name)
 	if (_realised)
 	{
 		shd->realise(name);
+
+#if 0   // greebo: This is causing Camera and XY draw calls which in turn causes 
+        // problems when rendering target lines. Can be reactivated once the target
+        // lines attach only to the rendersystem they belong to.
+
+        // Yield to allow the UI to breathe
+        wxTheApp->ProcessIdle();
+        wxTheApp->Yield();
+#endif
 	}
 
 	// Return the new shader
@@ -96,6 +104,8 @@ void OpenGLRenderSystem::render(RenderStateFlags globalstate,
                                const Matrix4& projection,
                                const Vector3& viewer)
 {
+	glPushAttrib(GL_ALL_ATTRIB_BITS);
+
 	// Set the projection and modelview matrices
 	glMatrixMode(GL_PROJECTION);
 	glLoadMatrixd(projection);
@@ -188,6 +198,8 @@ void OpenGLRenderSystem::render(RenderStateFlags globalstate,
             i->second->render(current, globalstate, viewer, _time);
         }
 	}
+
+	glPopAttrib();
 }
 
 void OpenGLRenderSystem::realise()
@@ -232,7 +244,7 @@ void OpenGLRenderSystem::unrealise()
         sp->unrealise();
     }
 
-	if (GlobalOpenGL().contextValid()
+	if (GlobalOpenGL().wxContextValid()
         && shaderProgramsAvailable()
         && getCurrentShaderProgram() != SHADER_PROGRAM_NONE)
     {
@@ -346,8 +358,15 @@ void OpenGLRenderSystem::extensionsInitialised()
 		if (!GLEW_ARB_fragment_program) {
 			rMessage() << "  GL_ARB_fragment_program\n";
 		}
-
 	}
+
+	// Notify all our observers
+	_sigExtensionsInitialised();
+}
+
+sigc::signal<void> OpenGLRenderSystem::signal_extensionsInitialised()
+{
+	return _sigExtensionsInitialised;
 }
 
 LightList& OpenGLRenderSystem::attachLitObject(LitObject& object)
@@ -358,7 +377,7 @@ LightList& OpenGLRenderSystem::attachLitObject(LitObject& object)
 			LinearLightList(
                 object,
                 m_lights,
-                boost::bind(
+                std::bind(
                     &OpenGLRenderSystem::propagateLightChangedFlagToAllLights,
                     this
                 )

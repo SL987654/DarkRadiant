@@ -8,7 +8,6 @@
 #include "iarchive.h"
 #include "imainframe.h"
 
-#include <boost/make_shared.hpp>
 #include <iostream>
 
 namespace sound
@@ -20,8 +19,7 @@ const char* SOUND_FOLDER = "sound/";
 /**
  * Loader class passed to the GlobalFileSystem to load sound files
  */
-class SoundFileLoader :
-	public VirtualFileSystem::Visitor
+class SoundFileLoader
 {
     // Shader map to populate
 	SoundManager::ShaderMap& _shaders;
@@ -60,7 +58,7 @@ private:
             result = _shaders.insert(
                 SoundManager::ShaderMap::value_type(
                     block.name,
-                    boost::make_shared<SoundShader>(block.name, block.contents, modName)
+                    std::make_shared<SoundShader>(block.name, block.contents, modName)
                 )
             );
 
@@ -83,7 +81,7 @@ public:
 	/**
 	 * Functor operator.
 	 */
-	void visit(const std::string& filename)
+	void operator()(const std::string& filename)
 	{
 		// Open the .sndshd file and get its contents as a std::string
 		ArchiveTextFilePtr file =
@@ -98,13 +96,15 @@ public:
             {
 				parseShadersFromStream(is, file->getModName());
 			}
-			catch (parser::ParseException& ex) {
+			catch (parser::ParseException& ex) 
+            {
 				rError() << "[sound]: Error while parsing " << filename <<
 					": " << ex.what() << std::endl;
 			}
 		}
-		else {
-			std::cerr << "[sound] Warning: unable to open \""
+		else 
+        {
+			rWarning() << "[sound] Warning: unable to open \""
 					  << filename << "\"" << std::endl;
 		}
 	}

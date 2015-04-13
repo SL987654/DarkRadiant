@@ -10,8 +10,7 @@
 #include "irender.h"
 #include "texturelib.h"
 
-#include <boost/bind.hpp>
-#include <boost/foreach.hpp>
+#include <functional>
 
 namespace render
 {
@@ -55,16 +54,16 @@ void OpenGLShader::addRenderable(const OpenGLRenderable& renderable,
     if (!_isVisible) return;
 
     // Add the renderable to all of our shader passes
-    BOOST_FOREACH(OpenGLShaderPassPtr pass, _shaderPasses)
+    for (const OpenGLShaderPassPtr& pass : _shaderPasses)
     {
-        g_assert(pass);
+        assert(pass);
 
 		if (pass->state().testRenderFlag(RENDER_BUMP))
 		{
 			if (lights != NULL)
 			{
 				OpenGLShaderPassAdd add(*pass, renderable, modelview);
-				lights->forEachLight(boost::bind(&OpenGLShaderPassAdd::visit, &add, _1));
+				lights->forEachLight(std::bind(&OpenGLShaderPassAdd::visit, &add, std::placeholders::_1));
 			}
 		}
 		else
@@ -81,14 +80,14 @@ void OpenGLShader::addRenderable(const OpenGLRenderable& renderable,
 {
     if (!_isVisible) return;
 
-    BOOST_FOREACH(OpenGLShaderPassPtr pass, _shaderPasses)
+    for (const OpenGLShaderPassPtr& pass : _shaderPasses)
     {
         if (pass->state().testRenderFlag(RENDER_BUMP))
 		{
 			if (lights != NULL)
 			{
 				OpenGLShaderPassAdd add(*pass, renderable, modelview, &entity);
-				lights->forEachLight(boost::bind(&OpenGLShaderPassAdd::visit, &add, _1));
+				lights->forEachLight(std::bind(&OpenGLShaderPassAdd::visit, &add, std::placeholders::_1));
 			}
 		}
 		else
@@ -699,23 +698,19 @@ void OpenGLShader::construct(const std::string& name)
             }
             else if (name == "$CAM_OVERLAY")
             {
-              state.setRenderFlags(RENDER_CULLFACE
-                                 | RENDER_DEPTHTEST
-                                 | RENDER_DEPTHWRITE
-                                 | RENDER_OFFSETLINE);
+              state.setRenderFlags(RENDER_OFFSETLINE | RENDER_DEPTHTEST);
               state.setSortPosition(OpenGLState::SORT_OVERLAY_LAST);
-              state.setDepthFunc(GL_LEQUAL);
 
-              // Second pass for hidden lines
-              OpenGLState& hiddenLine = appendDefaultPass();
-              hiddenLine.setColour(0.75, 0.75, 0.75, 1);
-              hiddenLine.setRenderFlags(RENDER_CULLFACE
-                                      | RENDER_DEPTHTEST
-                                      | RENDER_OFFSETLINE
-                                      | RENDER_LINESTIPPLE);
-              hiddenLine.setSortPosition(OpenGLState::SORT_OVERLAY_FIRST);
-              hiddenLine.setDepthFunc(GL_GREATER);
-              hiddenLine.m_linestipple_factor = 2;
+			  // Second pass for hidden lines
+			  OpenGLState& hiddenLine = appendDefaultPass();
+			  hiddenLine.setColour(0.75, 0.75, 0.75, 1);
+			  hiddenLine.setRenderFlags(RENDER_CULLFACE
+				  | RENDER_DEPTHTEST
+				  | RENDER_OFFSETLINE
+				  | RENDER_LINESTIPPLE);
+			  hiddenLine.setSortPosition(OpenGLState::SORT_OVERLAY_FIRST);
+			  hiddenLine.setDepthFunc(GL_GREATER);
+			  hiddenLine.m_linestipple_factor = 2;
             }
             else if (name == "$XY_OVERLAY")
             {

@@ -3,7 +3,7 @@
 #include "iradiant.h"
 #include "icommandsystem.h"
 
-#include <boost/scoped_ptr.hpp>
+#include <memory>
 
 namespace radiant
 {
@@ -19,7 +19,7 @@ class RadiantModule :
     sigc::signal<void> _radiantShutdown;
 
     // Thread manager instance
-    mutable boost::scoped_ptr<RadiantThreadManager> _threadManager;
+    mutable std::unique_ptr<RadiantThreadManager> _threadManager;
 
 public:
 
@@ -32,7 +32,10 @@ public:
     // IRadiant implementation
     sigc::signal<void> signal_radiantStarted() const;
     sigc::signal<void> signal_radiantShutdown() const;
-    const ThreadManager& getThreadManager() const;
+    ThreadManager& getThreadManager();
+	void performLongRunningOperation(
+		const std::function<void(ILongRunningOperation&)>& operationFunc,
+		const std::string& title);
 
 	// RegisterableModule implementation
 	const std::string& getName() const;
@@ -48,7 +51,7 @@ public:
 	// Target method bound to the "Exit" command
 	static void exitCmd(const cmd::ArgumentList& args);
 };
-typedef boost::shared_ptr<RadiantModule> RadiantModulePtr;
+typedef std::shared_ptr<RadiantModule> RadiantModulePtr;
 
 /**
  * Return the global Radiant module (for use internally, not by other

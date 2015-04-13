@@ -5,6 +5,8 @@
 #include <fstream>
 #include <iostream>
 #include "ifiletypes.h"
+#include "ientity.h"
+#include "iarchive.h"
 #include "igroupnode.h"
 #include "ifilesystem.h"
 #include "imainframe.h"
@@ -13,16 +15,15 @@
 #include "map/RootNode.h"
 #include "mapfile.h"
 #include "gamelib.h"
-#include "gtkutil/dialog/MessageBox.h"
-#include "referencecache/NullModelLoader.h"
+#include "wxutil/dialog/MessageBox.h"
 #include "debugging/debugging.h"
 #include "os/path.h"
 #include "os/file.h"
 #include "map/algorithm/Traverse.h"
 #include "stream/textfilestream.h"
-#include "referencecache/NullModelNode.h"
+#include "scenelib.h"
 
-#include <boost/bind.hpp>
+#include <functional>
 #include <boost/format.hpp>
 #include <boost/filesystem.hpp>
 
@@ -83,7 +84,6 @@ std::string MapResource::_infoFileExt;
 
 // Constructor
 MapResource::MapResource(const std::string& name) :
-	_mapRoot(model::NullModelNode::InstancePtr()),
 	_originalName(name),
 	_type(os::getExtension(name)),
 	_modified(0),
@@ -110,7 +110,8 @@ MapResource::~MapResource() {
 	}
 }
 
-void MapResource::rename(const std::string& fullPath) {
+void MapResource::rename(const std::string& fullPath)
+{
 	// Save the paths locally and split them into parts
 	_originalName = fullPath;
 	_type = fullPath.substr(fullPath.rfind(".") + 1);
@@ -118,16 +119,15 @@ void MapResource::rename(const std::string& fullPath) {
 	_name = os::getRelativePath(_originalName, _path);
 
 	// Rename the map root as well
-    RootNodePtr root = boost::dynamic_pointer_cast<RootNode>(_mapRoot);
-	if (root)
-    {
-		root->setName(_name);
-	}
+    _mapRoot->setName(_name);
 }
 
-bool MapResource::load() {
+bool MapResource::load()
+{
 	ASSERT_MESSAGE(realised(), "resource not realised");
-	if (_mapRoot == model::NullModelNode::InstancePtr()) {
+
+	if (!_mapRoot)
+    {
 		// Map not loaded yet, acquire map root node from loader
 		_mapRoot = loadMapNode();
 
@@ -135,7 +135,7 @@ bool MapResource::load() {
 		mapSave();
 	}
 
-	return _mapRoot != model::NullModelNode::InstancePtr();
+	return _mapRoot != nullptr;
 }
 
 /**
@@ -269,9 +269,8 @@ bool MapResource::saveBackup()
 			rError() << "map path is not writeable: " << fullpath.string() << std::endl;
 
 			// File is write-protected
-			gtkutil::MessageBox::ShowError(
-				(boost::format(_("File is write-protected: %s")) % fullpath.string()).str(),
-				GlobalMainFrame().getTopLevelWindow());
+			wxutil::Messagebox::ShowError(
+				(boost::format(_("File is write-protected: %s")) % fullpath.string()).str());
 
 			return false;
 		}
@@ -280,12 +279,14 @@ bool MapResource::saveBackup()
 	return false;
 }
 
-scene::INodePtr MapResource::getNode() {
+scene::IMapRootNodePtr MapResource::getNode()
+{
 	return _mapRoot;
 }
 
-void MapResource::setNode(scene::INodePtr node) {
-	_mapRoot = node;
+void MapResource::setNode(const scene::IMapRootNodePtr& node)
+{
+    _mapRoot = std::dynamic_pointer_cast<RootNode>(node);
 	connectMap();
 }
 
@@ -338,18 +339,19 @@ void MapResource::unrealise() {
 	}
 
 	//rMessage() << "MapResource::unrealise: " << _path.c_str() << _name.c_str() << "\n";
-	_mapRoot = model::NullModelNode::InstancePtr();
+	_mapRoot.reset();
 }
 
 void MapResource::onMapChanged() {
 	GlobalMap().setModified(true);
 }
 
-void MapResource::connectMap() {
-    MapFilePtr map = Node_getMapFile(_mapRoot);
-    if (map != NULL) {
-    	// Reroute the changed callback to the onMapChanged() call.
-		map->setChangedCallback(boost::bind(&MapResource::onMapChanged, this));
+void MapResource::connectMap()
+{
+    if (_mapRoot)
+    {
+        // Reroute the changed callback to the onMapChanged() call.
+        _mapRoot->getUndoChangeTracker().setChangedCallback(std::bind(&MapResource::onMapChanged, this));
     }
 }
 
@@ -358,12 +360,14 @@ std::time_t MapResource::modified() const {
 	return file_modified(fullpath.c_str());
 }
 
-void MapResource::mapSave() {
+void MapResource::mapSave()
+{
 	_modified = modified();
-	MapFilePtr map = Node_getMapFile(_mapRoot);
-	if (map != NULL) {
-		map->save();
-	}
+    
+    if (_mapRoot)
+    {
+        _mapRoot->getUndoChangeTracker().save();
+    }
 }
 
 bool MapResource::isModified() const {
@@ -404,13 +408,13 @@ MapFormatPtr MapResource::determineMapFormat(std::istream& stream)
 	return format;
 }
 
-scene::INodePtr MapResource::loadMapNode()
+RootNodePtr MapResource::loadMapNode()
 {
 	// greebo: Check if we have valid settings
 	// The _path might be empty if we're loading from a folder outside the mod
 	if (_name.empty() && _type.empty())
 	{
-		return model::NullModelNode::InstancePtr();
+        return RootNodePtr();
 	}
 
 	// Build the map path
@@ -421,54 +425,74 @@ scene::INodePtr MapResource::loadMapNode()
 		rMessage() << "Open file " << fullpath << " for determining the map format...";
 
 		TextFileInputStream file(fullpath);
-		std::istream mapStream(&file);
 
 		if (file.failed())
 		{
 			rError() << "failure" << std::endl;
 
-			gtkutil::MessageBox::ShowError(
-				(boost::format(_("Failure opening map file:\n%s")) % fullpath).str(),
-				GlobalMainFrame().getTopLevelWindow());
+			wxutil::Messagebox::ShowError(
+				(boost::format(_("Failure opening map file:\n%s")) % fullpath).str());
 
-			return model::NullModelNode::InstancePtr();
+            return RootNodePtr();
 		}
 
-		rMessage() << "success" << std::endl;
-
-		// Get the mapformat
-		MapFormatPtr format = determineMapFormat(mapStream);
-
-		if (format == NULL)
-		{
-			gtkutil::MessageBox::ShowError(
-				(boost::format(_("Could not determine map format of file:\n%s")) % fullpath).str(),
-				GlobalMainFrame().getTopLevelWindow());
-
-			return model::NullModelNode::InstancePtr();
-		}
-		
-		// Map format valid, rewind the stream
-		mapStream.seekg(0, std::ios_base::beg);
-
-		// Create a new map root node
-		scene::INodePtr root(NewMapRoot(_name));
-
-		if (loadFile(mapStream, *format, root, fullpath))
-		{
-			return root;
-		}
+		std::istream mapStream(&file);
+		return loadMapNodeFromStream(mapStream, fullpath);
 	}
 	else 
 	{
-		rError() << "map path is not fully qualified: " << fullpath << std::endl;
-	}
+		// Not an absolute path, might as well be a VFS path, so try to load it from the PAKs
+		rMessage() << "Open file " << fullpath << " from VFS for determining the map format...";
 
-	// Return the NULL node on failure
-	return model::NullModelNode::InstancePtr();
+		ArchiveTextFilePtr vfsFile = GlobalFileSystem().openTextFile(fullpath);
+
+		if (!vfsFile)
+		{
+			rError() << "Could not find file in VFS either: " << fullpath << std::endl;
+            return RootNodePtr();
+		}
+
+		std::istream mapStream(&(vfsFile->getInputStream()));
+
+		// Deflated text files don't support stream positioning (seeking)
+		// so load everything into one large string and create a new buffer
+		std::stringstream stringStream;
+		stringStream << mapStream.rdbuf();
+		
+		return loadMapNodeFromStream(stringStream, fullpath);
+	}
 }
 
-bool MapResource::loadFile(std::istream& mapStream, const MapFormat& format, const scene::INodePtr& root, const std::string& filename)
+RootNodePtr MapResource::loadMapNodeFromStream(std::istream& stream, const std::string& fullpath)
+{
+	rMessage() << "success" << std::endl;
+
+	// Get the mapformat
+	MapFormatPtr format = determineMapFormat(stream);
+
+	if (format == NULL)
+	{
+		wxutil::Messagebox::ShowError(
+			(boost::format(_("Could not determine map format of file:\n%s")) % fullpath).str());
+
+        return RootNodePtr();
+	}
+
+	// Map format valid, rewind the stream
+	stream.seekg(0, std::ios_base::beg);
+	
+	// Create a new map root node
+    RootNodePtr root = std::make_shared<RootNode>(_name);
+
+	if (loadFile(stream, *format, root, fullpath))
+	{
+		return root;
+	}
+
+    return RootNodePtr();
+}
+
+bool MapResource::loadFile(std::istream& mapStream, const MapFormat& format, const RootNodePtr& root, const std::string& filename)
 {
 	// Our importer taking care of scene insertion
 	MapImporter importFilter(root, mapStream);
@@ -572,11 +596,10 @@ bool MapResource::loadFile(std::istream& mapStream, const MapFormat& format, con
 
 		return true;
 	}
-	catch (gtkutil::ModalProgressDialog::OperationAbortedException&)
+	catch (wxutil::ModalProgressDialog::OperationAbortedException&)
 	{
-		gtkutil::MessageBox::ShowError(
-			_("Map loading cancelled"),
-			GlobalMainFrame().getTopLevelWindow()
+		wxutil::Messagebox::ShowError(
+			_("Map loading cancelled")
 		);
 
 		// Clear out the root node, otherwise we end up with half a map
@@ -587,9 +610,8 @@ bool MapResource::loadFile(std::istream& mapStream, const MapFormat& format, con
 	}
 	catch (IMapReader::FailureException& e)
 	{
-		gtkutil::MessageBox::ShowError(
-				(boost::format(_("Failure reading map file:\n%s\n\n%s")) % filename % e.what()).str(),
-				GlobalMainFrame().getTopLevelWindow());
+		wxutil::Messagebox::ShowError(
+				(boost::format(_("Failure reading map file:\n%s\n\n%s")) % filename % e.what()).str());
 
 		// Clear out the root node, otherwise we end up with half a map
 		scene::NodeRemover remover;
@@ -615,9 +637,8 @@ bool MapResource::checkIsWriteable(const boost::filesystem::path& path)
 		// File is write-protected
 		rError() << "File is write-protected." << std::endl;
 
-		gtkutil::MessageBox::ShowError(
-			(boost::format(_("File is write-protected: %s")) % path.string()).str(),
-			GlobalMainFrame().getTopLevelWindow());
+		wxutil::Messagebox::ShowError(
+			(boost::format(_("File is write-protected: %s")) % path.string()).str());
 
 		return false;
 	}
@@ -680,12 +701,9 @@ bool MapResource::saveFile(const MapFormat& format, const scene::INodePtr& root,
 			// Pass the traversal function and the root of the subgraph to export
 			exporter->exportMap(root, traverse);
 		}
-		catch (gtkutil::ModalProgressDialog::OperationAbortedException&)
+		catch (wxutil::ModalProgressDialog::OperationAbortedException&)
 		{
-			gtkutil::MessageBox::ShowError(
-				_("Map writing cancelled"),
-				GlobalMainFrame().getTopLevelWindow()
-			);
+			wxutil::Messagebox::ShowError(_("Map writing cancelled"));
 
 			cancelled = true;
 		}
@@ -699,9 +717,8 @@ bool MapResource::saveFile(const MapFormat& format, const scene::INodePtr& root,
 	}
 	else
 	{
-		gtkutil::MessageBox::ShowError(
-			_("Could not open output streams for writing"),
-			GlobalMainFrame().getTopLevelWindow()
+		wxutil::Messagebox::ShowError(
+			_("Could not open output streams for writing")
 		);
 
 		rError() << "failure" << std::endl;

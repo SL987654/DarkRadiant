@@ -1,11 +1,10 @@
 #include "RadiantSelectionSystem.h"
 
-#include "gdk/gdktypes.h"
-
 #include "iundo.h"
 #include "igrid.h"
 #include "iradiant.h"
 #include "ieventmanager.h"
+#include "imousetoolmanager.h"
 #include "editable.h"
 #include "Selectors.h"
 #include "SelectionTest.h"
@@ -16,8 +15,10 @@
 #include "registry/registry.h"
 #include "selection/algorithm/Primitives.h"
 #include "selection/algorithm/General.h"
+#include "SelectionMouseTools.h"
+#include "ManipulateMouseTool.h"
 
-#include <boost/bind.hpp>
+#include <functional>
 
 // Initialise the shader pointer
 ShaderPtr RadiantSelectionSystem::_state;
@@ -500,7 +501,7 @@ bool RadiantSelectionSystem::SelectManipulator(const render::View& view, const V
         if (!nothingSelected() || (ManipulatorMode() == eDrag && Mode() == eComponent))
         {
             render::View scissored(view);
-            ConstructSelectionTest(scissored, Rectangle::ConstructFromPoint(device_point, device_epsilon));
+            ConstructSelectionTest(scissored, selection::Rectangle::ConstructFromPoint(device_point, device_epsilon));
 
             // The manipulator class checks on its own, if any of its components can be selected
             _manipulator->testSelect(scissored, GetPivot2World());
@@ -568,7 +569,7 @@ void RadiantSelectionSystem::SelectPoint(const render::View& view,
     {
         render::View scissored(view);
         // Construct a selection test according to a small box with 2*epsilon edge length
-        ConstructSelectionTest(scissored, Rectangle::ConstructFromPoint(device_point, device_epsilon));
+        ConstructSelectionTest(scissored, selection::Rectangle::ConstructFromPoint(device_point, device_epsilon));
 
         // Create a new SelectionPool instance and fill it with possible candidates
         SelectionVolume volume(scissored);
@@ -667,7 +668,7 @@ void RadiantSelectionSystem::SelectArea(const render::View& view,
     {
         // Construct the selection test according to the area the user covered with his drag
         render::View scissored(view);
-        ConstructSelectionTest(scissored, Rectangle::ConstructFromArea(device_point, device_delta));
+        ConstructSelectionTest(scissored, selection::Rectangle::ConstructFromArea(device_point, device_delta));
 
         SelectionVolume volume(scissored);
         // The posssible candidates go here
@@ -821,7 +822,7 @@ void RadiantSelectionSystem::MoveSelected(const render::View& view, const Vector
         Vector2 constrainedDevicePoint(devicePoint);
 
         // Constrain the movement to the axes, if the modifier is held
-        if ((GlobalEventManager().getModifierState() & GDK_SHIFT_MASK) != 0)
+        if (wxGetKeyState(WXK_SHIFT))
         {
             // Get the movement delta relative to the start point
             Vector2 delta = devicePoint - _deviceStart;
@@ -845,7 +846,9 @@ void RadiantSelectionSystem::MoveSelected(const render::View& view, const Vector
         _manipulator->getActiveComponent()->Transform(_manip2pivotStart, device2manip, constrainedDevicePoint[0], constrainedDevicePoint[1]);
 
         _requestWorkZoneRecalculation = true;
-        _requestSceneGraphChange = true;
+        _requestSceneGraphChange = false;
+
+		GlobalSceneGraph().sceneChanged();
 
         requestIdleCallback();
     }
@@ -1111,6 +1114,7 @@ const StringSet& RadiantSelectionSystem::getDependencies() const {
         _dependencies.insert(MODULE_XMLREGISTRY);
         _dependencies.insert(MODULE_GRID);
         _dependencies.insert(MODULE_SCENEGRAPH);
+        _dependencies.insert(MODULE_MOUSETOOLMANAGER);
     }
 
     return _dependencies;
@@ -1118,7 +1122,7 @@ const StringSet& RadiantSelectionSystem::getDependencies() const {
 
 void RadiantSelectionSystem::initialiseModule(const ApplicationContext& ctx) 
 {
-    rMessage() << "RadiantSelectionSystem::initialiseModule called.\n";
+    rMessage() << "RadiantSelectionSystem::initialiseModule called." << std::endl;
 
     constructStatic();
 
@@ -1141,20 +1145,17 @@ void RadiantSelectionSystem::initialiseModule(const ApplicationContext& ctx)
         sigc::mem_fun(this, &RadiantSelectionSystem::keyChanged)
     );
 
-    // Pass a reference to self to the global event manager
-    GlobalEventManager().connectSelectionSystem(this);
-
-	GlobalEventManager().addToggle("ToggleClipper", boost::bind(&RadiantSelectionSystem::toggleClipManipulatorMode, this, _1));
-	GlobalEventManager().addToggle("MouseTranslate", boost::bind(&RadiantSelectionSystem::toggleTranslateManipulatorMode, this, _1));
-	GlobalEventManager().addToggle("MouseRotate", boost::bind(&RadiantSelectionSystem::toggleRotateManipulatorMode, this, _1));
-	GlobalEventManager().addToggle("MouseDrag", boost::bind(&RadiantSelectionSystem::toggleDragManipulatorMode, this, _1));
+	GlobalEventManager().addToggle("ToggleClipper", std::bind(&RadiantSelectionSystem::toggleClipManipulatorMode, this, std::placeholders::_1));
+	GlobalEventManager().addToggle("MouseTranslate", std::bind(&RadiantSelectionSystem::toggleTranslateManipulatorMode, this, std::placeholders::_1));
+	GlobalEventManager().addToggle("MouseRotate", std::bind(&RadiantSelectionSystem::toggleRotateManipulatorMode, this, std::placeholders::_1));
+	GlobalEventManager().addToggle("MouseDrag", std::bind(&RadiantSelectionSystem::toggleDragManipulatorMode, this, std::placeholders::_1));
 	GlobalEventManager().setToggled("MouseDrag", true);
 
-	GlobalEventManager().addToggle("DragVertices", boost::bind(&RadiantSelectionSystem::toggleVertexComponentMode, this, _1));
-	GlobalEventManager().addToggle("DragEdges", boost::bind(&RadiantSelectionSystem::toggleEdgeComponentMode, this, _1));
-	GlobalEventManager().addToggle("DragFaces", boost::bind(&RadiantSelectionSystem::toggleFaceComponentMode, this, _1));
-	GlobalEventManager().addToggle("DragEntities", boost::bind(&RadiantSelectionSystem::toggleEntityMode, this, _1));
-	GlobalEventManager().addToggle("SelectionModeGroupPart", boost::bind(&RadiantSelectionSystem::toggleGroupPartMode, this, _1));
+	GlobalEventManager().addToggle("DragVertices", std::bind(&RadiantSelectionSystem::toggleVertexComponentMode, this, std::placeholders::_1));
+	GlobalEventManager().addToggle("DragEdges", std::bind(&RadiantSelectionSystem::toggleEdgeComponentMode, this, std::placeholders::_1));
+	GlobalEventManager().addToggle("DragFaces", std::bind(&RadiantSelectionSystem::toggleFaceComponentMode, this, std::placeholders::_1));
+	GlobalEventManager().addToggle("DragEntities", std::bind(&RadiantSelectionSystem::toggleEntityMode, this, std::placeholders::_1));
+	GlobalEventManager().addToggle("SelectionModeGroupPart", std::bind(&RadiantSelectionSystem::toggleGroupPartMode, this, std::placeholders::_1));
 
 	GlobalEventManager().setToggled("DragVertices", false);
 	GlobalEventManager().setToggled("DragEdges", false);
@@ -1162,7 +1163,7 @@ void RadiantSelectionSystem::initialiseModule(const ApplicationContext& ctx)
 	GlobalEventManager().setToggled("DragEntities", false);
 	GlobalEventManager().setToggled("SelectionModeGroupPart", false);
 
-	GlobalCommandSystem().addCommand("UnSelectSelection", boost::bind(&RadiantSelectionSystem::deselectCmd, this, _1));
+	GlobalCommandSystem().addCommand("UnSelectSelection", std::bind(&RadiantSelectionSystem::deselectCmd, this, std::placeholders::_1));
 	GlobalEventManager().addCommand("UnSelectSelection", "UnSelectSelection");
 
     // Connect the bounds changed caller
@@ -1171,6 +1172,22 @@ void RadiantSelectionSystem::initialiseModule(const ApplicationContext& ctx)
     );
 
     GlobalRenderSystem().attachRenderable(*this);
+
+    // Orthoview: manipulate and all the non-face selection tools
+    ui::IMouseToolGroup& orthoGroup = GlobalMouseToolManager().getGroup(ui::IMouseToolGroup::Type::OrthoView);
+
+    orthoGroup.registerMouseTool(std::make_shared<ui::ManipulateMouseTool>(*this));
+    orthoGroup.registerMouseTool(std::make_shared<ui::DragSelectionMouseTool>());
+    orthoGroup.registerMouseTool(std::make_shared<ui::CycleSelectionMouseTool>());
+
+    // Camera: manipulation plus all selection tools, including the face-only tools
+    ui::IMouseToolGroup& camGroup = GlobalMouseToolManager().getGroup(ui::IMouseToolGroup::Type::CameraView);
+
+    camGroup.registerMouseTool(std::make_shared<ui::ManipulateMouseTool>(*this));
+    camGroup.registerMouseTool(std::make_shared<ui::DragSelectionMouseTool>());
+    camGroup.registerMouseTool(std::make_shared<ui::DragSelectionMouseToolFaceOnly>());
+    camGroup.registerMouseTool(std::make_shared<ui::CycleSelectionMouseTool>());
+    camGroup.registerMouseTool(std::make_shared<ui::CycleSelectionMouseToolFaceOnly>());
 }
 
 void RadiantSelectionSystem::shutdownModule() 
@@ -1196,7 +1213,7 @@ void RadiantSelectionSystem::checkComponentModeSelectionMode(const Selectable& s
 	}
 }
 
-void RadiantSelectionSystem::onGtkIdle()
+void RadiantSelectionSystem::onIdle()
 {
     // System is idle, check for pending tasks
 
@@ -1370,8 +1387,32 @@ void RadiantSelectionSystem::toggleGroupPartMode(bool newState)
 	else
 	{
 		// De-select everything when switching to group part mode
-		setSelectedAll(false);
-		setSelectedAllComponents(false);
+        setSelectedAllComponents(false);
+
+        // greebo: Instead of de-selecting everything, check if we can
+        // transform existing selections into something useful
+
+        // Collect all entities containing child primitives
+        std::vector<scene::INodePtr> groupEntityNodes;
+        foreachSelected([&](const scene::INodePtr& node)
+        {
+            if (scene::isGroupNode(node))
+            {
+                groupEntityNodes.push_back(node);
+            }
+        });
+
+        // Now deselect everything and select all child primitives instead
+        setSelectedAll(false);
+        
+        std::for_each(groupEntityNodes.begin(), groupEntityNodes.end(), [&](const scene::INodePtr& node)
+        {
+            node->foreachNode([&] (const scene::INodePtr& child)->bool
+            {
+                Node_setSelected(child, true);
+                return true;
+            });
+        });
 
 		SetMode(eGroupPart);
 		SetComponentMode(eDefault);

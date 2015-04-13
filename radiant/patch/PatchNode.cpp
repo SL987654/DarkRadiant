@@ -9,16 +9,16 @@
 // Construct a PatchNode with no arguments
 PatchNode::PatchNode(bool patchDef3) :
 	scene::SelectableNode(),
-	m_dragPlanes(boost::bind(&PatchNode::selectedChangedComponent, this, _1)),
+	m_dragPlanes(std::bind(&PatchNode::selectedChangedComponent, this, std::placeholders::_1)),
 	m_render_selected(GL_POINTS),
 	m_lightList(&GlobalRenderSystem().attachLitObject(*this)),
 	m_patch(*this,
-			Callback(boost::bind(&PatchNode::evaluateTransform, this)),
-			Callback(boost::bind(&SelectableNode::boundsChanged, this))) // create the m_patch member with the node parameters
+			Callback(std::bind(&PatchNode::evaluateTransform, this)),
+			Callback(std::bind(&SelectableNode::boundsChanged, this))) // create the m_patch member with the node parameters
 {
 	m_patch.m_patchDef3 = patchDef3;
 
-	SelectableNode::setTransformChangedCallback(Callback(boost::bind(&PatchNode::lightsChanged, this)));
+	SelectableNode::setTransformChangedCallback(Callback(std::bind(&PatchNode::lightsChanged, this)));
 }
 
 // Copy Constructor
@@ -34,15 +34,15 @@ PatchNode::PatchNode(const PatchNode& other) :
 	PlaneSelectable(other),
 	LitObject(other),
 	Transformable(other),
-	m_dragPlanes(boost::bind(&PatchNode::selectedChangedComponent, this, _1)),
+	m_dragPlanes(std::bind(&PatchNode::selectedChangedComponent, this, std::placeholders::_1)),
 	m_render_selected(GL_POINTS),
 	m_lightList(&GlobalRenderSystem().attachLitObject(*this)),
 	m_patch(other.m_patch,
 			*this,
-			Callback(boost::bind(&PatchNode::evaluateTransform, this)),
-			Callback(boost::bind(&SelectableNode::boundsChanged, this))) // create the patch out of the <other> one
+			Callback(std::bind(&PatchNode::evaluateTransform, this)),
+			Callback(std::bind(&SelectableNode::boundsChanged, this))) // create the patch out of the <other> one
 {
-	SelectableNode::setTransformChangedCallback(Callback(boost::bind(&PatchNode::lightsChanged, this)));
+	SelectableNode::setTransformChangedCallback(Callback(std::bind(&PatchNode::lightsChanged, this)));
 }
 
 PatchNode::~PatchNode()
@@ -52,7 +52,7 @@ PatchNode::~PatchNode()
 
 scene::INode::Type PatchNode::getNodeType() const
 {
-	return Type::Primitive;
+	return Type::Patch;
 }
 
 void PatchNode::allocate(std::size_t size) {
@@ -66,7 +66,7 @@ void PatchNode::allocate(std::size_t size) {
 	for(PatchControlIter i = m_patch.begin(); i != m_patch.end(); ++i)
 	{
 		m_ctrl_instances.push_back(
-			PatchControlInstance(*i, boost::bind(&PatchNode::selectedChangedComponent, this, _1))
+			PatchControlInstance(*i, std::bind(&PatchNode::selectedChangedComponent, this, std::placeholders::_1))
 		);
 	}
 }
@@ -213,7 +213,7 @@ bool PatchNode::isVisible() const
 
 bool PatchNode::hasVisibleMaterial() const
 {
-	return m_patch.getState()->getMaterial()->isVisible();
+	return m_patch.getSurfaceShader().getGLShader()->getMaterial()->isVisible();
 }
 
 void PatchNode::invertSelected()
@@ -248,17 +248,20 @@ scene::INodePtr PatchNode::clone() const {
 	return scene::INodePtr(new PatchNode(*this));
 }
 
-void PatchNode::onInsertIntoScene()
+void PatchNode::onInsertIntoScene(scene::IMapRootNode& root)
 {
-	m_patch.instanceAttach(scene::findMapFile(getSelf()));
+    // Mark the GL shader as used from now on, this is used by the TextureBrowser's filtering
+    m_patch.getSurfaceShader().setInUse(true);
+
+	m_patch.connectUndoSystem(root.getUndoChangeTracker());
 	GlobalCounters().getCounter(counterPatches).increment();
 
-	SelectableNode::onInsertIntoScene();
+	SelectableNode::onInsertIntoScene(root);
 }
 
-void PatchNode::onRemoveFromScene()
+void PatchNode::onRemoveFromScene(scene::IMapRootNode& root)
 {
-	// De-select this node
+    // De-select this node
 	setSelected(false);
 
 	// De-select all child components as well
@@ -266,9 +269,11 @@ void PatchNode::onRemoveFromScene()
 
 	GlobalCounters().getCounter(counterPatches).decrement();
 
-	m_patch.instanceDetach(scene::findMapFile(getSelf()));
+	m_patch.disconnectUndoSystem(root.getUndoChangeTracker());
 
-	SelectableNode::onRemoveFromScene();
+    m_patch.getSurfaceShader().setInUse(false);
+
+	SelectableNode::onRemoveFromScene(root);
 }
 
 bool PatchNode::getIntersection(const Ray& ray, Vector3& intersection)
@@ -300,7 +305,7 @@ void PatchNode::renderSolid(RenderableCollector& collector, const VolumeTest& vo
 void PatchNode::renderWireframe(RenderableCollector& collector, const VolumeTest& volume) const
 {
 	// Don't render invisible shaders
-	if (!m_patch.getState()->getMaterial()->isVisible()) return;
+	if (!m_patch.getSurfaceShader().getGLShader()->getMaterial()->isVisible()) return;
 
 	const_cast<Patch&>(m_patch).evaluateTransform();
 
@@ -331,7 +336,7 @@ void PatchNode::setRenderSystem(const RenderSystemPtr& renderSystem)
 void PatchNode::renderComponents(RenderableCollector& collector, const VolumeTest& volume) const
 {
 	// Don't render invisible shaders
-	if (!m_patch.getState()->getMaterial()->isVisible()) return;
+	if (!m_patch.getSurfaceShader().getGLShader()->getMaterial()->isVisible()) return;
 
 	// greebo: Don't know yet, what evaluateTransform() is really doing
 	const_cast<Patch&>(m_patch).evaluateTransform();

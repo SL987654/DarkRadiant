@@ -6,6 +6,9 @@ Makefile
 .libs
 .deps
 
+# Editor temporary files
+*.swp
+
 # Windows directories
 w32deps
 w64deps
@@ -36,3 +39,4 @@ testsuite.ilk
 *.ipch
 *.dirstamp
 /tools/innosetup/*.7z
+*.vspx

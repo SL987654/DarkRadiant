@@ -2,8 +2,7 @@
 
 #include "iundo.h"
 #include "mapfile.h"
-#include "warnings.h"
-#include <boost/function.hpp>
+#include <functional>
 #include "BasicUndoMemento.h"
 
 namespace undo
@@ -13,46 +12,42 @@ template<typename Copyable>
 class ObservedUndoable : 
 	public IUndoable
 {
-	typedef boost::function<void (const Copyable&)> ImportCallback;
+	typedef std::function<void (const Copyable&)> ImportCallback;
 
 	Copyable& _object;
 	ImportCallback _importCallback;
 	IUndoStateSaver* _undoStateSaver;
-	MapFile* _map;
+    IMapFileChangeTracker* _changeTracker;
+
 public:
 	ObservedUndoable<Copyable>(Copyable& object, const ImportCallback& importCallback) :
 		_object(object), 
 		_importCallback(importCallback), 
-		_undoStateSaver(NULL), 
-		_map(NULL)
+        _undoStateSaver(nullptr),
+        _changeTracker(nullptr)
 	{}
 
-	MapFile* map()
+    IMapFileChangeTracker& getUndoChangeTracker()
+    {
+        return *_changeTracker;
+    }
+
+	void connectUndoSystem(IMapFileChangeTracker& changeTracker)
 	{
-		return _map;
+        _changeTracker = &changeTracker;
+		_undoStateSaver = GlobalUndoSystem().getStateSaver(*this, changeTracker);
 	}
 
-	void instanceAttach(MapFile* map)
+    void disconnectUndoSystem(IMapFileChangeTracker& map)
 	{
-		_map = map;
-		_undoStateSaver = GlobalUndoSystem().getStateSaver(*this);
-	}
-
-	void instanceDetach(MapFile* map)
-	{
-		_map = NULL;
-		_undoStateSaver = NULL;
+        _undoStateSaver = nullptr;
+        _changeTracker = nullptr;
 		GlobalUndoSystem().releaseStateSaver(*this);
 	}
 
 	void save()
 	{
-		if (_map != NULL)
-		{
-			_map->changed();
-		}
-
-		if (_undoStateSaver != NULL)
+		if (_undoStateSaver != nullptr)
 		{
 			_undoStateSaver->save(*this);
 		}

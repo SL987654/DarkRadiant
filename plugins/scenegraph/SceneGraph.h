@@ -7,7 +7,7 @@
 #include "iscenegraph.h"
 #include "imodule.h"
 #include "ispacepartition.h"
-#include <boost/enable_shared_from_this.hpp>
+#include "imap.h"
 
 namespace scene
 {
@@ -20,7 +20,7 @@ namespace scene
  */
 class SceneGraph :
 	public Graph,
-	public boost::enable_shared_from_this<SceneGraph>
+	public std::enable_shared_from_this<SceneGraph>
 {
 private:
 	typedef std::list<Graph::Observer*> ObserverList;
@@ -29,7 +29,7 @@ private:
     sigc::signal<void> _sigBoundsChanged;
 
 	// The root-element, the scenegraph starts here
-	scene::INodePtr _root;
+    IMapRootNodePtr _root;
 
 	// The space partitioning system
 	ISpacePartitionSystemPtr _spacePartition;
@@ -52,8 +52,8 @@ public:
 	void sceneChanged();
 
 	// Root node accessor methods
-	const INodePtr& root() const;
-	void setRoot(const INodePtr& newRoot);
+    const IMapRootNodePtr& root() const override;
+    void setRoot(const IMapRootNodePtr& newRoot) override;
 
 	// greebo: Emits the "bounds changed" signal to all connected observers
 	// Note: these are the WorkZone and the SelectionSystem, AFAIK
@@ -85,7 +85,7 @@ private:
 	bool foreachNodeInVolume_r(const ISPNode& node, const VolumeTest& volume, 
 							   const INode::VisitorFunc& functor, bool visitHidden);
 };
-typedef boost::shared_ptr<SceneGraph> SceneGraphPtr;
+typedef std::shared_ptr<SceneGraph> SceneGraphPtr;
 
 // Type used to register the GlobalSceneGraph in the module registry
 class SceneGraphModule :
@@ -98,6 +98,6 @@ public:
 	const StringSet& getDependencies() const;
 	void initialiseModule(const ApplicationContext& ctx);
 };
-typedef boost::shared_ptr<SceneGraphModule> SceneGraphModulePtr;
+typedef std::shared_ptr<SceneGraphModule> SceneGraphModulePtr;
 
 } // namespace scene

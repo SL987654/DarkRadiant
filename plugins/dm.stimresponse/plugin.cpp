@@ -44,7 +44,7 @@ public:
 		rMessage() << "StimResponseModule::initialiseModule called.\n";
 
 		// Add the callback event
-		GlobalCommandSystem().addCommand("StimResponseEditor", ui::StimResponseEditor::showDialog);
+		GlobalCommandSystem().addCommand("StimResponseEditor", ui::StimResponseEditor::ShowDialog);
 		GlobalEventManager().addCommand("StimResponseEditor", "StimResponseEditor");
 
 		// Add the menu item
@@ -57,7 +57,7 @@ public:
 				"StimResponseEditor"); // event name
 	}
 };
-typedef boost::shared_ptr<StimResponseModule> StimResponseModulePtr;
+typedef std::shared_ptr<StimResponseModule> StimResponseModulePtr;
 
 extern "C" void DARKRADIANT_DLLEXPORT RegisterModule(IModuleRegistry& registry) {
 	registry.registerModule(StimResponseModulePtr(new StimResponseModule));

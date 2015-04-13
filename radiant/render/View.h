@@ -39,6 +39,9 @@ private:
 public:
 	View(bool fill = false);
 
+    View(const View& other);
+    View(const VolumeTest& other);
+
 	void Construct(const Matrix4& projection, const Matrix4& modelview, std::size_t width, std::size_t height);
 
 	void EnableScissor(float min_x, float max_x, float min_y, float max_y);
@@ -60,6 +63,7 @@ public:
 	bool fill() const;
 	
 	const Vector3& getViewer() const;
+    const Frustum& getFrustum() const;
 	
 	static const std::string& getCullStats();
 	static void resetCullStats();

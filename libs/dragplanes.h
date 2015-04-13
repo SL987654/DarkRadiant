@@ -1,249 +1,283 @@
-/*
-Copyright (C) 2001-2006, William Joseph.
-All Rights Reserved.
-
-This file is part of GtkRadiant.
-
-GtkRadiant is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-GtkRadiant is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with GtkRadiant; if not, write to the Free Software
-Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-*/
-
-#if !defined(INCLUDED_DRAGPLANES_H)
-#define INCLUDED_DRAGPLANES_H
+#pragma once
 
 #include "iselectiontest.h"
 #include "ObservedSelectable.h"
 #include "math/AABB.h"
 #include "math/Line.h"
 
-// local must be a pure rotation
-inline Vector3 translation_to_local(const Vector3& translation, const Matrix4& local)
+namespace selection
 {
-	return local.getTransposed().getTranslatedBy(translation).getMultipliedBy(local).translation();
-}
 
-// local must be a pure rotation
-inline Vector3 translation_from_local(const Vector3& translation, const Matrix4& local)
-{
-	return local.getTranslatedBy(translation).getMultipliedBy(local.getTransposed()).translation();
-}
-
+/**
+ * Selection-test and transformation helper for drag-resizable objects. 
+ * This is used by PatchNodes, LightNodes and SpeakerNodes.
+ */
 class DragPlanes
 {
+private:
+    ObservedSelectable _selectableRight; // +x
+    ObservedSelectable _selectableLeft; // -x
+    ObservedSelectable _selectableFront; // +y
+    ObservedSelectable _selectableBack; // -y
+    ObservedSelectable _selectableTop; // +z
+    ObservedSelectable _selectableBottom; // -z
+
 public:
-  selection::ObservedSelectable m_selectable_right; // +x
-  selection::ObservedSelectable m_selectable_left; // -x
-  selection::ObservedSelectable m_selectable_front; // +y
-  selection::ObservedSelectable m_selectable_back; // -y
-  selection::ObservedSelectable m_selectable_top; // +z
-  selection::ObservedSelectable m_selectable_bottom; // -z
-  AABB m_bounds;
+    AABB m_bounds;
 
-  DragPlanes(const SelectionChangedSlot& onchanged) :
-    m_selectable_right(onchanged),
-    m_selectable_left(onchanged),
-    m_selectable_front(onchanged),
-    m_selectable_back(onchanged),
-    m_selectable_top(onchanged),
-    m_selectable_bottom(onchanged)
-  {
-  }
-  bool isSelected() const
-  {
-    return m_selectable_right.isSelected()
-      || m_selectable_left.isSelected()
-      || m_selectable_front.isSelected()
-      || m_selectable_back.isSelected()
-      || m_selectable_top.isSelected()
-      || m_selectable_bottom.isSelected();
-  }
-  void setSelected(bool selected)
-  {
-    m_selectable_right.setSelected(selected);
-    m_selectable_left.setSelected(selected);
-    m_selectable_front.setSelected(selected);
-    m_selectable_back.setSelected(selected);
-    m_selectable_top.setSelected(selected);
-    m_selectable_bottom.setSelected(selected);
-  }
-  void selectPlanes(const AABB& aabb, Selector& selector, SelectionTest& test, const PlaneCallback& selectedPlaneCallback, const Matrix4& rotation = Matrix4::getIdentity())
-  {
-    Line line(test.getNear(), test.getFar());
-    Vector3 corners[8];
-	aabb.getCorners(corners, rotation);
+    DragPlanes(const SelectionChangedSlot& onchanged) :
+        _selectableRight(onchanged),
+        _selectableLeft(onchanged),
+        _selectableFront(onchanged),
+        _selectableBack(onchanged),
+        _selectableTop(onchanged),
+        _selectableBottom(onchanged)
+    {}
 
-    Plane3 planes[6];
-	aabb.getPlanes(planes, rotation);
-
-    for(Vector3* i = corners; i != corners + 8; ++i)
+    // Returns true if any of the 6 planes is selected
+    bool isSelected() const
     {
-      *i = line.getClosestPoint(*i) - (*i);
+        return _selectableRight.isSelected() || _selectableLeft.isSelected() ||
+               _selectableFront.isSelected() || _selectableBack.isSelected() || 
+               _selectableTop.isSelected() || _selectableBottom.isSelected();
     }
 
-    if(planes[0].normal().dot(corners[1]) > 0
-      && planes[0].normal().dot(corners[2]) > 0
-      && planes[0].normal().dot(corners[5]) > 0
-      && planes[0].normal().dot(corners[6]) > 0)
+    void setSelected(bool selected)
     {
-      Selector_add(selector, m_selectable_right);
-      selectedPlaneCallback(planes[0]);
-      //rMessage() << "right\n";
-    }
-    if(planes[1].normal().dot(corners[0]) > 0
-      && planes[1].normal().dot(corners[3]) > 0
-      && planes[1].normal().dot(corners[4]) > 0
-      && planes[1].normal().dot(corners[7]) > 0)
-    {
-      Selector_add(selector, m_selectable_left);
-      selectedPlaneCallback(planes[1]);
-      //rMessage() << "left\n";
-    }
-    if(planes[2].normal().dot(corners[0]) > 0
-      && planes[2].normal().dot(corners[1]) > 0
-      && planes[2].normal().dot(corners[4]) > 0
-      && planes[2].normal().dot(corners[5]) > 0)
-    {
-      Selector_add(selector, m_selectable_front);
-      selectedPlaneCallback(planes[2]);
-      //rMessage() << "front\n";
-    }
-    if(planes[3].normal().dot(corners[2]) > 0
-      && planes[3].normal().dot(corners[3]) > 0
-      && planes[3].normal().dot(corners[6]) > 0
-      && planes[3].normal().dot(corners[7]) > 0)
-    {
-      Selector_add(selector, m_selectable_back);
-      selectedPlaneCallback(planes[3]);
-      //rMessage() << "back\n";
-    }
-    if(planes[4].normal().dot(corners[0]) > 0
-      && planes[4].normal().dot(corners[1]) > 0
-      && planes[4].normal().dot(corners[2]) > 0
-      && planes[4].normal().dot(corners[3]) > 0)
-    {
-      Selector_add(selector, m_selectable_top);
-      selectedPlaneCallback(planes[4]);
-      //rMessage() << "top\n";
-    }
-    if(planes[5].normal().dot(corners[4]) > 0
-      && planes[5].normal().dot(corners[5]) > 0
-      && planes[5].normal().dot(corners[6]) > 0
-      && planes[5].normal().dot(corners[7]) > 0)
-    {
-      Selector_add(selector, m_selectable_bottom);
-      selectedPlaneCallback(planes[5]);
-      //rMessage() << "bottom\n";
+        _selectableRight.setSelected(selected);
+        _selectableLeft.setSelected(selected);
+        _selectableFront.setSelected(selected);
+        _selectableBack.setSelected(selected);
+        _selectableTop.setSelected(selected);
+        _selectableBottom.setSelected(selected);
     }
 
-    m_bounds = aabb;
-  }
-  void selectReversedPlanes(const AABB& aabb, Selector& selector, const SelectedPlanes& selectedPlanes, const Matrix4& rotation = Matrix4::getIdentity())
-  {
-    Plane3 planes[6];
-	aabb.getPlanes(planes, rotation);
+    // greebo: Test-select each of the 6 planes and add suitable ones to the Selector
+    // for further consideration. The basic idea of this method is to do a simple
+    // "is this test position in front of any of these 6 planes"-test by calculating
+    // dot products with all corresponding 4 corner vertices of each plane. For a plane
+    // to pass the test it's required that all its 4 corner vertices need to pass.
+    // Everything passed in here should be specified in local coordinates, any 
+    // local2world transformation needs to be set up in the SelectionTest beforehand.
+    void selectPlanes(const AABB& aabb, 
+                      Selector& selector, 
+                      SelectionTest& test, 
+                      const PlaneCallback& selectedPlaneCallback)
+    {
+        // Provided that the object's local2World matrix has been fed into the SelectionTest
+        // the getNear() and getFar() methods will return local coordinates.
+        Line line(test.getNear(), test.getFar());
 
-    if(selectedPlanes.contains(-planes[0]))
-    {
-      Selector_add(selector, m_selectable_right);
-    }
-    if(selectedPlanes.contains(-planes[1]))
-    {
-      Selector_add(selector, m_selectable_left);
-    }
-    if(selectedPlanes.contains(-planes[2]))
-    {
-      Selector_add(selector, m_selectable_front);
-    }
-    if(selectedPlanes.contains(-planes[3]))
-    {
-      Selector_add(selector, m_selectable_back);
-    }
-    if(selectedPlanes.contains(-planes[4]))
-    {
-      Selector_add(selector, m_selectable_top);
-    }
-    if(selectedPlanes.contains(-planes[5]))
-    {
-      Selector_add(selector, m_selectable_bottom);
-    }
-  }
-  AABB evaluateResize(const Vector3& translation) const
-  {
-    Vector3 min = m_bounds.origin - m_bounds.extents;
-    Vector3 max = m_bounds.origin + m_bounds.extents;
-    if(m_bounds.extents[0] != 0)
-    {
-      if(m_selectable_right.isSelected())
-      {
-        max[0] += translation[0];
-        //rMessage() << "moving right\n";
-      }
-      if(m_selectable_left.isSelected())
-      {
-        min[0] += translation[0];
-        //rMessage() << "moving left\n";
-      }
-    }
-    if(m_bounds.extents[1] != 0)
-    {
-      if(m_selectable_front.isSelected())
-      {
-        max[1] += translation[1];
-        //rMessage() << "moving front\n";
-      }
-      if(m_selectable_back.isSelected())
-      {
-        min[1] += translation[1];
-        //rMessage() << "moving back\n";
-      }
-    }
-    if(m_bounds.extents[2] != 0)
-    {
-      if(m_selectable_top.isSelected())
-      {
-        max[2] += translation[2];
-        //rMessage() << "moving top\n";
-      }
-      if(m_selectable_bottom.isSelected())
-      {
-        min[2] += translation[2];
-        //rMessage() << "moving bottom\n";
-      }
+        // Calculate the corners (local coords)
+        Vector3 corners[8];
+        aabb.getCorners(corners);
+
+        Plane3 planes[6];
+        aabb.getPlanes(planes);
+
+        // Next calculate the vectors for the upcoming dot-product
+        // Take the closest point of the selection ray and calc the distance vector
+        for (Vector3* i = corners; i != corners + 8; ++i)
+        {
+            *i = line.getClosestPoint(*i) - (*i);
+        }
+
+        if (planes[0].normal().dot(corners[1]) > 0 && planes[0].normal().dot(corners[2]) > 0 &&
+            planes[0].normal().dot(corners[5]) > 0 && planes[0].normal().dot(corners[6]) > 0)
+        {
+            Selector_add(selector, _selectableRight);
+            selectedPlaneCallback(planes[0]);
+            //rMessage() << "right\n";
+        }
+
+        if (planes[1].normal().dot(corners[0]) > 0 && planes[1].normal().dot(corners[3]) > 0 && 
+            planes[1].normal().dot(corners[4]) > 0 && planes[1].normal().dot(corners[7]) > 0)
+        {
+            Selector_add(selector, _selectableLeft);
+            selectedPlaneCallback(planes[1]);
+            //rMessage() << "left\n";
+        }
+
+        if (planes[2].normal().dot(corners[0]) > 0 && planes[2].normal().dot(corners[1]) > 0 && 
+            planes[2].normal().dot(corners[4]) > 0 && planes[2].normal().dot(corners[5]) > 0)
+        {
+            Selector_add(selector, _selectableFront);
+            selectedPlaneCallback(planes[2]);
+            //rMessage() << "front\n";
+        }
+
+        if (planes[3].normal().dot(corners[2]) > 0 && planes[3].normal().dot(corners[3]) > 0 && 
+            planes[3].normal().dot(corners[6]) > 0 && planes[3].normal().dot(corners[7]) > 0)
+        {
+            Selector_add(selector, _selectableBack);
+            selectedPlaneCallback(planes[3]);
+            //rMessage() << "back\n";
+        }
+
+        if (planes[4].normal().dot(corners[0]) > 0 && planes[4].normal().dot(corners[1]) > 0 && 
+            planes[4].normal().dot(corners[2]) > 0 && planes[4].normal().dot(corners[3]) > 0)
+        {
+            Selector_add(selector, _selectableTop);
+            selectedPlaneCallback(planes[4]);
+            //rMessage() << "top\n";
+        }
+
+        if (planes[5].normal().dot(corners[4]) > 0 && planes[5].normal().dot(corners[5]) > 0 && 
+            planes[5].normal().dot(corners[6]) > 0 && planes[5].normal().dot(corners[7]) > 0)
+        {
+            Selector_add(selector, _selectableBottom);
+            selectedPlaneCallback(planes[5]);
+            //rMessage() << "bottom\n";
+        }
+
+        m_bounds = aabb;
     }
 
-    return AABB(min.mid(max), (max - min)*0.5f);
-  }
-  AABB evaluateResize(const Vector3& translation, const Matrix4& rotation) const
-  {
-    AABB aabb(evaluateResize(translation_to_local(translation, rotation)));
-    aabb.origin = m_bounds.origin + translation_from_local(aabb.origin - m_bounds.origin, rotation);
-    return aabb;
-  }
-  Matrix4 evaluateTransform(const Vector3& translation) const
-  {
-    AABB aabb(evaluateResize(translation));
-    Vector3 scale(
-      m_bounds.extents[0] != 0 ? aabb.extents[0] / m_bounds.extents[0] : 1,
-      m_bounds.extents[1] != 0 ? aabb.extents[1] / m_bounds.extents[1] : 1,
-      m_bounds.extents[2] != 0 ? aabb.extents[2] / m_bounds.extents[2] : 1
-    );
+    void selectReversedPlanes(const AABB& aabb, Selector& selector, const SelectedPlanes& selectedPlanes)
+    {
+        Plane3 planes[6];
+        aabb.getPlanes(planes);
 
-    Matrix4 matrix = Matrix4::getTranslation(aabb.origin - m_bounds.origin);
-	matrix.scaleBy(scale, m_bounds.origin);
+        if (selectedPlanes.contains(-planes[0]))
+        {
+            Selector_add(selector, _selectableRight);
+        }
 
-    return matrix;
-  }
+        if (selectedPlanes.contains(-planes[1]))
+        {
+            Selector_add(selector, _selectableLeft);
+        }
+
+        if (selectedPlanes.contains(-planes[2]))
+        {
+            Selector_add(selector, _selectableFront);
+        }
+
+        if (selectedPlanes.contains(-planes[3]))
+        {
+            Selector_add(selector, _selectableBack);
+        }
+
+        if (selectedPlanes.contains(-planes[4]))
+        {
+            Selector_add(selector, _selectableTop);
+        }
+
+        if (selectedPlanes.contains(-planes[5]))
+        {
+            Selector_add(selector, _selectableBottom);
+        }
+    }
+
+    // greebo: This calculates a new AABB for the given translation. Everything used in here is in local coordinates:
+    // The m_bounds member (which has to be set beforehand) as well as the translation vector. 
+    // Based on the selection status of the 6 planes a new min/max vector pair is calculated 
+    // and the resulting AABB is returned.
+    AABB evaluateResize(const Vector3& translation) const
+    {
+        Vector3 min = m_bounds.getOrigin() - m_bounds.getExtents();
+        Vector3 max = m_bounds.getOrigin() + m_bounds.getExtents();
+
+        // Handle x translation
+        if (m_bounds.extents.x() != 0)
+        {
+            if (_selectableRight.isSelected())
+            {
+                max.x() += translation.x();
+                //rMessage() << "moving right\n";
+            }
+
+            if (_selectableLeft.isSelected())
+            {
+                min.x() += translation.x();
+                //rMessage() << "moving left\n";
+            }
+        }
+
+        // Handle y translation
+        if (m_bounds.extents.y() != 0)
+        {
+            if (_selectableFront.isSelected())
+            {
+                max.y() += translation.y();
+                //rMessage() << "moving front\n";
+            }
+
+            if (_selectableBack.isSelected())
+            {
+                min.y() += translation.y();
+                //rMessage() << "moving back\n";
+            }
+        }
+
+        // Handle z translation
+        if (m_bounds.extents.z() != 0)
+        {
+            if (_selectableTop.isSelected())
+            {
+                max.z() += translation.z();
+                //rMessage() << "moving top\n";
+            }
+
+            if(_selectableBottom.isSelected())
+            {
+                min.z() += translation.z();
+                //rMessage() << "moving bottom\n";
+            }
+        }
+
+        return AABB::createFromMinMax(min, max);
+    }
+
+    // greebo: Evaluates the given translation for the rotated m_bounds and return a new one.
+    // Translation is in world coordinates, whereas the (previously set) m_bounds AABB is in local coords.
+    // The given rotation matrix is used to transform the incoming translation. Only those planes which
+    // have been selected beforehand will be translated. The m_bounds member needs to be set beforehand. 
+    // As PatchNodes and SpeakerNodes are quasi non-rotated objects, this code applies to LightNodes only.
+    AABB evaluateResize(const Vector3& translation, const Matrix4& rotation) const
+    {
+        //rMessage() << "Translation: " << translation << ", to local: " << translationToLocal(translation, rotation) << std::endl;
+
+        // Convert the translation to local coords and calculate a resized AABB (in local coords).
+        AABB aabb(evaluateResize(translationToLocal(translation, rotation)));
+
+        // The origin is moved by this operation as well:
+        // Rotate the diff vector between oldLocalOrigin and newLocalOrigin and apply it to the AABB
+        aabb.origin = m_bounds.origin + translationFromLocal(aabb.origin - m_bounds.origin, rotation);
+
+        return aabb;
+    }
+
+    // greebo: This is used by PatchNodes to calculate a generic transformation matrix from the given
+    // drag-manipulation, which is then applied to the whole object.
+    Matrix4 evaluateTransform(const Vector3& translation) const
+    {
+        AABB aabb(evaluateResize(translation));
+
+        Vector3 scale(
+            m_bounds.extents[0] != 0 ? aabb.extents[0] / m_bounds.extents[0] : 1,
+            m_bounds.extents[1] != 0 ? aabb.extents[1] / m_bounds.extents[1] : 1,
+            m_bounds.extents[2] != 0 ? aabb.extents[2] / m_bounds.extents[2] : 1
+        );
+
+        Matrix4 matrix = Matrix4::getTranslation(aabb.origin - m_bounds.origin);
+        matrix.scaleBy(scale, m_bounds.origin);
+
+        return matrix;
+    }
+
+private:
+    // local must be a pure rotation
+    Vector3 translationToLocal(const Vector3& translation, const Matrix4& local) const
+    {
+        return local.getTransposed().getTranslatedBy(translation).getMultipliedBy(local).translation();
+    }
+
+    // local must be a pure rotation
+    Vector3 translationFromLocal(const Vector3& translation, const Matrix4& local) const
+    {
+        return local.getTranslatedBy(translation).getMultipliedBy(local.getTransposed()).translation();
+    }
 };
 
-#endif
+} // namespace

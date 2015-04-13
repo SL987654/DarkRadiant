@@ -8,9 +8,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/erase.hpp>
-#include <boost/bind.hpp>
-#include <boost/foreach.hpp>
-#include <boost/make_shared.hpp>
+#include <functional>
 
 namespace eclass
 {
@@ -108,7 +106,7 @@ private:
 
         // Take each item from the copied map, and insert it into the original
         // map using the name as the key.
-        BOOST_FOREACH(typename Map::value_type pair, copy)
+        for (typename Map::value_type pair : copy)
         {
             if (!pair.second.name.empty()) // ignore empty names
             {
@@ -356,7 +354,7 @@ Doom3EntityClassPtr Doom3EntityClass::create(const std::string& name,
 {
     if (!brushes)
     {
-        return boost::make_shared<Doom3EntityClass>(name,
+        return std::make_shared<Doom3EntityClass>(name,
                                                     Vector3(-1, -1, -1),
                                                     true,
                                                     Vector3(-8, -8, -8),
@@ -364,13 +362,13 @@ Doom3EntityClassPtr Doom3EntityClass::create(const std::string& name,
     }
     else
     {
-        return boost::make_shared<Doom3EntityClass>(name);
+        return std::make_shared<Doom3EntityClass>(name);
     }
 }
 
 // Enumerate entity class attributes
 void Doom3EntityClass::forEachClassAttribute(
-    boost::function<void(const EntityClassAttribute&)> visitor,
+    std::function<void(const EntityClassAttribute&)> visitor,
     bool editorKeys) const
 {
     for (EntityAttributeMap::const_iterator i = _attributes.begin();
@@ -417,7 +415,7 @@ void Doom3EntityClass::resolveInheritance(EntityClasses& classmap)
 
         // Copy attributes from the parent to the child, including editor keys
         pIter->second->forEachClassAttribute(
-            boost::bind(&copyInheritedAttribute, this, _1), true
+            std::bind(&copyInheritedAttribute, this, std::placeholders::_1), true
         );
 
         // Set our parent pointer

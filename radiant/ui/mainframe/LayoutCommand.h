@@ -6,11 +6,11 @@
 #include "icommandsystem.h"
 #include "imainframe.h"
 
-#include "gtkutil/dialog/MessageBox.h"
+#include "wxutil/dialog/MessageBox.h"
 
 #include <string>
-#include <boost/bind.hpp>
-#include <boost/shared_ptr.hpp>
+#include <functional>
+#include <memory>
 
 namespace ui {
 
@@ -38,7 +38,7 @@ public:
 		_activateCommand = "ActivateLayout" + _layoutName;
 		GlobalCommandSystem().addCommand(
 			_activateCommand,
-			boost::bind(&LayoutCommand::activateLayout, this, _1)
+			std::bind(&LayoutCommand::activateLayout, this, std::placeholders::_1)
 		);
 		GlobalEventManager().addCommand(_activateCommand, _activateCommand);
 
@@ -46,7 +46,8 @@ public:
 		IMenuManager& menuManager = GlobalUIManager().getMenuManager();
 
 		// Add a new folder, if not existing yet
-		if (menuManager.get(MENU_LAYOUTS_PATH) == NULL) {
+		if (menuManager.get(MENU_LAYOUTS_PATH) == NULL)
+		{
 			menuManager.insert(
 				MENU_LAYOUTS_INSERT_BEFORE,
 				MENU_LAYOUTS,
@@ -74,12 +75,11 @@ public:
 	void activateLayout(const cmd::ArgumentList& args)
 	{
 		GlobalMainFrame().setActiveLayoutName(_layoutName);
-        gtkutil::MessageBox infoBox("Restart required",
-                                    "Restart DarkRadiant to apply changes",
-                                    ui::IDialog::MESSAGE_CONFIRM);
-        infoBox.run();
+        wxutil::Messagebox::Show("Restart required",
+                                 "Restart DarkRadiant to apply changes",
+                                 ui::IDialog::MESSAGE_CONFIRM);
 	}
 };
-typedef boost::shared_ptr<LayoutCommand> LayoutCommandPtr;
+typedef std::shared_ptr<LayoutCommand> LayoutCommandPtr;
 
 } // namespace ui

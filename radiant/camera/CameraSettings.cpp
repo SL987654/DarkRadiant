@@ -7,7 +7,8 @@
 #include "registry/registry.h"
 #include "GlobalCamera.h"
 
-#include <boost/lexical_cast.hpp>
+namespace ui
+{
 
 CameraSettings::CameraSettings() :
 	_callbackActive(false),
@@ -246,9 +247,10 @@ void CameraSettings::toggleFarClip(bool)
 	setFarClip(!_farClipEnabled);
 }
 
-// ---------------------------------------------------------------------------------
+} // namespace
 
-CameraSettings* getCameraSettings() {
-	static CameraSettings _cameraSettings;
+ui::CameraSettings* getCameraSettings()
+{
+	static ui::CameraSettings _cameraSettings;
 	return &_cameraSettings;
 }

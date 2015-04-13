@@ -2,17 +2,18 @@
 #define DEVICE_H_
 
 #include "math/Vector2.h"
-#include <boost/function/function_fwd.hpp>
+#include <functional>
 
 // A vector representing the mouse pointer coordinates
 typedef Vector2 DeviceVector;
+typedef Vector2 WindowVector;
 typedef struct _GdkEventButton GdkEventButton;
 
 inline float screen_normalised(float pos, std::size_t size) {
   return ((2.0f * pos) / size) - 1.0f;
 }
 
-inline DeviceVector window_to_normalised_device(WindowVector window, std::size_t width, std::size_t height) {
+inline DeviceVector window_to_normalised_device(Vector2 window, std::size_t width, std::size_t height) {
   return DeviceVector(screen_normalised(window.x(), width), screen_normalised(height - 1 - window.y(), height));
 }
 
@@ -33,6 +34,6 @@ inline DeviceVector device_constrained(DeviceVector device) {
 }
 
 // greebo: The mouseOperations callbacks, should they really be a global?
-typedef boost::function<void (const DeviceVector&)> MouseEventCallback;
+typedef std::function<void (const DeviceVector&)> MouseEventCallback;
 
 #endif /*DEVICE_H_*/

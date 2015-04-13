@@ -8,7 +8,7 @@
 #include "idialogmanager.h"
 #include "iregistry.h"
 #include "selectionlib.h"
-#include <boost/bind.hpp>
+#include <functional>
 #include "i18n.h"
 
 #include "WaveFrontExporter.h"
@@ -28,7 +28,7 @@ void WaveFrontModule::exportSelectionAsOBJ(const cmd::ArgumentList& args)
 
 	// Query the filename from the user
 	ui::IFileChooserPtr chooser = GlobalDialogManager().createFileChooser(
-		_("Save as Obj"), false, false, "*.obj", ".obj"
+		_("Save as Obj"), false, "*.obj", ".obj"
 	);
 
 	chooser->setCurrentPath(GlobalRegistry().get(RKEY_MAP_PATH));
@@ -75,7 +75,7 @@ void WaveFrontModule::initialiseModule(const ApplicationContext& ctx)
 	// Register the command
 	GlobalCommandSystem().addCommand(
 		"ExportSelectedAsOBJ",
-		boost::bind(&WaveFrontModule::exportSelectionAsOBJ, this, _1)
+		std::bind(&WaveFrontModule::exportSelectionAsOBJ, this, std::placeholders::_1)
 	);
 
 	// Bind the reloadscripts command to the menu

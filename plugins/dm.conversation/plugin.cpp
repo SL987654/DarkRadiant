@@ -39,7 +39,7 @@ public:
 		rMessage() << getName() << "::initialiseModule called.\n";
 
 		// Add the callback event
-		GlobalCommandSystem().addCommand("ConversationEditor", ui::ConversationDialog::showDialog);
+		GlobalCommandSystem().addCommand("ConversationEditor", ui::ConversationDialog::ShowDialog);
 		GlobalEventManager().addCommand("ConversationEditor", "ConversationEditor");
 
 		// Add the menu item
@@ -52,7 +52,7 @@ public:
 				"ConversationEditor"); // event name
 	}
 };
-typedef boost::shared_ptr<ConversationEditorModule> ConversationEditorModulePtr;
+typedef std::shared_ptr<ConversationEditorModule> ConversationEditorModulePtr;
 
 extern "C" void DARKRADIANT_DLLEXPORT RegisterModule(IModuleRegistry& registry) {
 	registry.registerModule(ConversationEditorModulePtr(new ConversationEditorModule));

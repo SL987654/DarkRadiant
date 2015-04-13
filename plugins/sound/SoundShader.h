@@ -2,8 +2,7 @@
 
 #include "isound.h"
 
-#include <boost/shared_ptr.hpp>
-#include <boost/scoped_ptr.hpp>
+#include <memory>
 
 namespace sound
 {
@@ -18,8 +17,8 @@ class SoundShader : public ISoundShader
 	std::string _blockContents;
 
     // Information we have parsed on demand
-    class ParsedContents;
-    mutable boost::scoped_ptr<ParsedContents> _contents;
+    struct ParsedContents;
+    mutable std::unique_ptr<ParsedContents> _contents;
 
 	// The modname (ModResource implementation)
 	std::string _modName;
@@ -47,6 +46,6 @@ public:
 /**
  * Shared pointer type.
  */
-typedef boost::shared_ptr<SoundShader> SoundShaderPtr;
+typedef std::shared_ptr<SoundShader> SoundShaderPtr;
 
 }

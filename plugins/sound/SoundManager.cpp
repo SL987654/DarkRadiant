@@ -18,7 +18,7 @@ SoundManager::SoundManager() :
 {}
 
 // Enumerate shaders
-void SoundManager::forEachShader(boost::function<void(const ISoundShader&)> f)
+void SoundManager::forEachShader(std::function<void(const ISoundShader&)> f)
 const
 {
     ensureShadersLoaded();
@@ -112,12 +112,11 @@ void SoundManager::loadShadersFromFilesystem() const
     GlobalFileSystem().forEachFile(
         SOUND_FOLDER,			// directory
         "sndshd", 				// required extension
-        loader,	// loader callback
+        [&](const std::string& filename) { loader(filename); },	// loader callback
         99						// max depth
     );
 
-    rMessage() << _shaders.size()
-                            << " sound shaders found." << std::endl;
+    rMessage() << _shaders.size() << " sound shaders found." << std::endl;
 
     _shadersLoaded = true;
 }
@@ -141,7 +140,7 @@ void SoundManager::initialiseModule(const ApplicationContext& ctx)
     {
         rMessage() << "SoundManager: initialising sound playback"
                              << std::endl;
-        _soundPlayer = boost::shared_ptr<SoundPlayer>(new SoundPlayer);
+        _soundPlayer = std::shared_ptr<SoundPlayer>(new SoundPlayer);
     }
     else
     {

@@ -10,12 +10,15 @@
 #include "inamespace.h"
 #include "iselection.h"
 #include "imainframe.h"
+#include "itextstream.h"
 
+#include "scenelib.h"
 #include "registry/registry.h"
-#include "gtkutil/dialog/MessageBox.h"
+#include "wxutil/dialog/MessageBox.h"
 #include "xyview/GlobalXYWnd.h"
 #include "map/algorithm/Clone.h"
-#include "map/BasicContainer.h"
+#include "scene/BasicRootNode.h"
+#include "debugging/debugging.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -49,7 +52,7 @@ void scaleSelected(const Vector3& scaleXYZ)
 		GlobalSelectionSystem().scaleSelected(scaleXYZ);
 	}
 	else {
-		gtkutil::MessageBox::ShowError(_("Cannot scale by zero value."), GlobalMainFrame().getTopLevelWindow());
+		wxutil::Messagebox::ShowError(_("Cannot scale by zero value."));
 	}
 }
 
@@ -74,11 +77,11 @@ private:
 	mutable Map _cloned;
 
 	// A container, which temporarily holds the cloned nodes
-	map::BasicContainerPtr _cloneRoot;
+    std::shared_ptr<scene::BasicRootNode> _cloneRoot;
 
 public:
 	SelectionCloner() :
-		_cloneRoot(new map::BasicContainer)
+		_cloneRoot(new scene::BasicRootNode)
 	{}
 
 	scene::INodePtr getCloneRoot() {
@@ -139,13 +142,8 @@ public:
 	}
 };
 
-/** greebo: Tries to select the given node.
- */
-void selectNode(scene::INodePtr node) {
-	Node_setSelected(node, true);
-}
-
-void cloneSelected(const cmd::ArgumentList& args) {
+void cloneSelected(const cmd::ArgumentList& args)
+{
 	// Check for the correct editing mode (don't clone components)
 	if (GlobalSelectionSystem().Mode() == SelectionSystem::eComponent) {
 		return;
@@ -167,7 +165,7 @@ void cloneSelected(const cmd::ArgumentList& args) {
 	clonedNamespace->connect(cloner.getCloneRoot());
 
 	// Get the namespace of the current map
-	IMapRootNodePtr mapRoot = GlobalMapModule().getRoot();
+	scene::IMapRootNodePtr mapRoot = GlobalMapModule().getRoot();
 	if (mapRoot == NULL) return; // not map root (this can happen)
 
 	INamespacePtr nspace = mapRoot->getNamespace();

@@ -44,7 +44,7 @@ public:
 		// Add the callback event
 		GlobalCommandSystem().addCommand(
 			"ParticlesEditor",
-			ParticleEditor::displayDialog
+			ParticleEditor::DisplayDialog
 		);
 		GlobalEventManager().addCommand("ParticlesEditor", "ParticlesEditor");
 
@@ -58,6 +58,6 @@ public:
 				"ParticlesEditor");
 	}
 };
-typedef boost::shared_ptr<ParticleEditorModule> ParticleEditorModulePtr;
+typedef std::shared_ptr<ParticleEditorModule> ParticleEditorModulePtr;
 
 } // namespace

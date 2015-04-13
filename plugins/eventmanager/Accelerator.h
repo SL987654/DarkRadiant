@@ -1,10 +1,10 @@
-#ifndef ACCELERATOR_H_
-#define ACCELERATOR_H_
+#pragma once
 
 #include "ieventmanager.h"
 
 #include "Event.h"
 
+#include <list>
 #include <iostream>
 
 /* greebo: An Accelerator consists of a key/modifier combination plus a connected Event object.
@@ -58,6 +58,25 @@ public:
 	void keyUp();
 	void keyDown();
 
-}; // class Accelerator
+	/**
+	 * Converts a string representation of a key to the corresponding
+	 * wxKeyCode, e.g. "A" => 65, "TAB" => wxKeyCode::WXK_TAB.
+	 *
+	 * Note that "a" will also result in the uppercase value of 'A' == 65.
+	 *
+	 * In GDK we had gdk_keyval_from_name, which seems to be missing
+	 * in wxWidgets.
+	 *
+	 * Will return WXK_NONE if no conversion exists.
+	 */
+	static unsigned int getKeyCodeFromName(const std::string& name);
 
-#endif /*ACCELERATOR_H_*/
+	/**
+	 * Converts the given keycode to a string to serialize it into
+	 * a settings or XML file. The given keycode will be converted
+	 * to its uppercase pendant if possible. 'a' => 'A'
+	 */
+	static std::string getNameFromKeyCode(unsigned int keyCode);
+};
+
+typedef std::list<Accelerator> AcceleratorList;

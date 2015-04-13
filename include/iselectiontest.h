@@ -5,8 +5,9 @@
 #include "math/Vector3.h"
 #include "inode.h"
 #include "iselection.h"
-#include <boost/shared_ptr.hpp>
-#include <boost/function/function_fwd.hpp>
+#include <memory>
+#include <memory>
+#include <functional>
 
 class SelectionIntersection
 {
@@ -227,6 +228,7 @@ public:
   virtual void TestQuads(const VertexPointer& vertices, const IndexPointer& indices, SelectionIntersection& best) = 0;
   virtual void TestQuadStrip(const VertexPointer& vertices, const IndexPointer& indices, SelectionIntersection& best) = 0;
 };
+typedef std::shared_ptr<SelectionTest> SelectionTestPtr;
 
 class Selector
 {
@@ -258,10 +260,10 @@ public:
     virtual ~SelectionTestable() {}
 	virtual void testSelect(Selector& selector, SelectionTest& test) = 0;
 };
-typedef boost::shared_ptr<SelectionTestable> SelectionTestablePtr;
+typedef std::shared_ptr<SelectionTestable> SelectionTestablePtr;
 
 inline SelectionTestablePtr Node_getSelectionTestable(const scene::INodePtr& node) {
-	return boost::dynamic_pointer_cast<SelectionTestable>(node);
+	return std::dynamic_pointer_cast<SelectionTestable>(node);
 }
 
 class ComponentSelectionTestable {
@@ -271,14 +273,14 @@ public:
 	virtual void setSelectedComponents(bool select, SelectionSystem::EComponentMode mode) = 0;
 	virtual void testSelectComponents(Selector& selector, SelectionTest& test, SelectionSystem::EComponentMode mode) = 0;
 };
-typedef boost::shared_ptr<ComponentSelectionTestable> ComponentSelectionTestablePtr;
+typedef std::shared_ptr<ComponentSelectionTestable> ComponentSelectionTestablePtr;
 
 inline ComponentSelectionTestablePtr Node_getComponentSelectionTestable(const scene::INodePtr& node) {
-	return boost::dynamic_pointer_cast<ComponentSelectionTestable>(node);
+	return std::dynamic_pointer_cast<ComponentSelectionTestable>(node);
 }
 
 class Plane3;
-typedef boost::function<void (const Plane3&)> PlaneCallback;
+typedef std::function<void (const Plane3&)> PlaneCallback;
 
 class SelectedPlanes
 {
@@ -294,8 +296,8 @@ public:
 	virtual void selectPlanes(Selector& selector, SelectionTest& test, const PlaneCallback& selectedPlaneCallback) = 0;
 	virtual void selectReversedPlanes(Selector& selector, const SelectedPlanes& selectedPlanes) = 0;
 };
-typedef boost::shared_ptr<PlaneSelectable> PlaneSelectablePtr;
+typedef std::shared_ptr<PlaneSelectable> PlaneSelectablePtr;
 
 inline PlaneSelectablePtr Node_getPlaneSelectable(const scene::INodePtr& node) {
-	return boost::dynamic_pointer_cast<PlaneSelectable>(node);
+	return std::dynamic_pointer_cast<PlaneSelectable>(node);
 }

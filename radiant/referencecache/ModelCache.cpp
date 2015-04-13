@@ -20,7 +20,7 @@
 #include "ui/modelselector/ModelSelector.h"
 #include "ui/mainframe/ScreenUpdateBlocker.h"
 #include "NullModelLoader.h"
-#include <boost/bind.hpp>
+#include <functional>
 
 namespace model {
 
@@ -31,7 +31,7 @@ namespace {
 	{
 	public:
 		bool pre(const scene::INodePtr& node) {
-			IEntityNodePtr entity = boost::dynamic_pointer_cast<IEntityNode>(node);
+			IEntityNodePtr entity = std::dynamic_pointer_cast<IEntityNode>(node);
 
 			if (entity != NULL) {
 				entity->refreshModel();
@@ -66,7 +66,7 @@ namespace {
 				_modelNames.insert(model->getIModel().getModelPath());
 
 				IEntityNodePtr ent =
-					boost::dynamic_pointer_cast<IEntityNode>(node->getParent());
+					std::dynamic_pointer_cast<IEntityNode>(node->getParent());
 
 				if (ent != NULL)
 				{
@@ -108,7 +108,7 @@ ModelLoaderPtr ModelCache::getModelLoaderForType(const std::string& type)
 
 	if (!moduleName.empty())
 	{
-		ModelLoaderPtr modelLoader = boost::static_pointer_cast<ModelLoader>(
+		ModelLoaderPtr modelLoader = std::static_pointer_cast<ModelLoader>(
 			module::GlobalModuleRegistry().getModule(moduleName)
 		);
 
@@ -313,11 +313,11 @@ void ModelCache::initialiseModule(const ApplicationContext& ctx) {
 
 	GlobalCommandSystem().addCommand(
 		"RefreshModels",
-		boost::bind(&ModelCache::refreshModels, this, _1)
+		std::bind(&ModelCache::refreshModels, this, std::placeholders::_1)
 	);
 	GlobalCommandSystem().addCommand(
 		"RefreshSelectedModels",
-		boost::bind(&ModelCache::refreshSelectedModels, this, _1)
+		std::bind(&ModelCache::refreshSelectedModels, this, std::placeholders::_1)
 	);
 	GlobalEventManager().addCommand("RefreshModels", "RefreshModels");
 	GlobalEventManager().addCommand("RefreshSelectedModels", "RefreshSelectedModels");

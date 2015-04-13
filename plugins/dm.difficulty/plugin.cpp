@@ -47,7 +47,7 @@ public:
 		rMessage() << getName() << "::initialiseModule called." << std::endl;
 
 		// Add the callback event
-		GlobalCommandSystem().addCommand("DifficultyEditor",  ui::DifficultyDialog::showDialog);
+		GlobalCommandSystem().addCommand("DifficultyEditor",  ui::DifficultyDialog::ShowDialog);
 		GlobalEventManager().addCommand("DifficultyEditor", "DifficultyEditor");
 
 		// Add the menu item
@@ -65,7 +65,7 @@ public:
 		ui::ClassNameStore::destroy();
 	}
 };
-typedef boost::shared_ptr<DifficultyEditorModule> DifficultyEditorModulePtr;
+typedef std::shared_ptr<DifficultyEditorModule> DifficultyEditorModulePtr;
 
 extern "C" void DARKRADIANT_DLLEXPORT RegisterModule(IModuleRegistry& registry)
 {

@@ -2,7 +2,7 @@
 
 #include "registry/adaptors.h"
 #include "modulesystem/StaticModule.h"
-#include <boost/bind.hpp>
+#include <functional>
 
 namespace render
 {
@@ -55,7 +55,7 @@ void SpacePartitionRenderer::initialiseModule(const ApplicationContext& ctx)
 	}
 
 	// Add the icon to the toolbar
-	GlobalCommandSystem().addCommand("ToggleSpacePartitionRendering", boost::bind(&SpacePartitionRenderer::toggle, this, _1));
+	GlobalCommandSystem().addCommand("ToggleSpacePartitionRendering", std::bind(&SpacePartitionRenderer::toggle, this, std::placeholders::_1));
 }
 
 void SpacePartitionRenderer::shutdownModule()
@@ -69,7 +69,7 @@ void SpacePartitionRenderer::shutdownModule()
 void SpacePartitionRenderer::installRenderer()
 {
 	_renderableSP.setSpacePartition(GlobalSceneGraph().getSpacePartition());
-	_renderableSP.setRenderSystem(boost::dynamic_pointer_cast<RenderSystem>(
+	_renderableSP.setRenderSystem(std::dynamic_pointer_cast<RenderSystem>(
 		module::GlobalModuleRegistry().getModule(MODULE_RENDERSYSTEM)));
 
 	GlobalRenderSystem().attachRenderable(_renderableSP);

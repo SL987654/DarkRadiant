@@ -4,7 +4,10 @@
 #include "iregistry.h"
 #include "GlobalCamera.h"
 #include "CameraSettings.h"
-#include <boost/bind.hpp>
+#include <functional>
+
+namespace ui
+{
 
 Vector3 Camera::_prevOrigin(0,0,0);
 Vector3 Camera::_prevAngles(0,0,0);
@@ -16,13 +19,16 @@ Camera::Camera(render::View* view, const Callback& update) :
 	height(0),
 	timing(false),
 	color(0, 0, 0),
+	projection(Matrix4::getIdentity()),
+	modelview(Matrix4::getIdentity()),
 	movementflags(0),
-	m_keymove_handler(0),
 	fieldOfView(75.0f),
-	m_mouseMove(boost::bind(&Camera::onMotionDelta, this, _1, _2)),
+	m_mouseMove(std::bind(&Camera::onMotionDelta, this, std::placeholders::_1, std::placeholders::_2)),
 	m_view(view),
 	m_update(update)
-{}
+{
+	_moveTimer.Connect(wxEVT_TIMER, wxTimerEventHandler(Camera::camera_keymove), NULL, this);
+}
 
 void Camera::keyControl(float dtime) {
 	int angleSpeed = getCameraSettings()->angleSpeed();
@@ -64,36 +70,45 @@ void Camera::keyControl(float dtime) {
 	updateModelview();
 }
 
-gboolean Camera::camera_keymove(gpointer data) {
-	Camera* self = reinterpret_cast<Camera*>(data);
-	self->keyMove();
-	return TRUE;
+void Camera::camera_keymove(wxTimerEvent& ev)
+{
+	keyMove();
 }
 
-void Camera::setMovementFlags(unsigned int mask) {
-	if ((~movementflags & mask) != 0 && movementflags == 0) {
-		m_keymove_handler = g_idle_add(camera_keymove, this);
+void Camera::setMovementFlags(unsigned int mask)
+{
+	if ((~movementflags & mask) != 0 && movementflags == 0)
+	{
+		_moveTimer.Start(10);
 	}
+
 	movementflags |= mask;
 }
 
-void Camera::clearMovementFlags(unsigned int mask) {
-	if ((movementflags & ~mask) == 0 && movementflags != 0) {
-		g_source_remove(m_keymove_handler);
-		m_keymove_handler = 0;
+void Camera::clearMovementFlags(unsigned int mask)
+{
+	if ((movementflags & ~mask) == 0 && movementflags != 0)
+	{
+		_moveTimer.Stop();
 	}
+
 	movementflags &= ~mask;
 }
 
-void Camera::keyMove() {
+void Camera::keyMove() 
+{
 	m_mouseMove.flush();
 
 	//rMessage() << "keymove... ";
-	float time_seconds = m_keycontrol_timer.elapsed_msec() / static_cast<float>(msec_per_sec);
-	m_keycontrol_timer.start();
-	if (time_seconds > 0.05f) {
+    float time_seconds = _keyControlTimer.Time() / static_cast<float>(1000);
+
+    _keyControlTimer.Start();
+
+	if (time_seconds > 0.05f)
+    {
 		time_seconds = 0.05f; // 20fps
 	}
+
 	keyControl(time_seconds * 5.0f);
 
 	m_update();
@@ -145,8 +160,8 @@ void Camera::freeMove(int dx, int dy) {
 
 	// free strafe mode, toggled by the keyboard modifiers
 	if (m_strafe) {
-		const float strafespeed = GlobalEventManager().MouseEvents().getCameraStrafeSpeed();
-		const float forwardStrafeFactor = GlobalEventManager().MouseEvents().getCameraForwardStrafeFactor();
+		const float strafespeed = GlobalCamera().getCameraStrafeSpeed();
+        const float forwardStrafeFactor = GlobalCamera().getCameraForwardStrafeFactor();
 
 		_origin -= vright * strafespeed * dx;
 
@@ -329,3 +344,5 @@ void Camera::rotateRightDiscrete() {
 	angles[CAMERA_YAW] -= SPEED_TURN;
 	setAngles(angles);
 }
+
+} // namespace

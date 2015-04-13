@@ -5,7 +5,7 @@
 #include "ModResource.h"
 
 #include <vector>
-#include <boost/function.hpp>
+#include <functional>
 
 // A list of sound files associated to a shader
 typedef std::vector<std::string> SoundFileList;
@@ -76,7 +76,7 @@ public:
 	virtual const std::string& getDisplayFolder() const = 0;
 
 };
-typedef boost::shared_ptr<ISoundShader> ISoundShaderPtr;
+typedef std::shared_ptr<ISoundShader> ISoundShaderPtr;
 
 const std::string MODULE_SOUNDMANAGER("SoundManager");
 
@@ -87,7 +87,7 @@ class ISoundManager :
 public:
 
     /// Invoke a function for each sound shader
-    virtual void forEachShader(boost::function<void(const ISoundShader&)>)
+    virtual void forEachShader(std::function<void(const ISoundShader&)>)
     const = 0;
 
     /** greebo: Tries to lookup the SoundShader with the given name,
@@ -111,7 +111,7 @@ public:
 inline ISoundManager& GlobalSoundManager() {
     // Cache the reference locally
     static ISoundManager& _soundManager(
-        *boost::static_pointer_cast<ISoundManager>(
+        *std::static_pointer_cast<ISoundManager>(
             module::GlobalModuleRegistry().getModule(MODULE_SOUNDMANAGER)
         )
     );

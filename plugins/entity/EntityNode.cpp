@@ -2,6 +2,7 @@
 
 #include "i18n.h"
 #include "itextstream.h"
+#include "icounter.h"
 
 #include "EntitySettings.h"
 #include "target/RenderableTargetInstances.h"
@@ -58,11 +59,11 @@ void EntityNode::construct()
 	addKeyObserver("name", _nameKey);
 	addKeyObserver("_color", _colourKey);
 
-	_modelKeyObserver.setCallback(boost::bind(&EntityNode::_modelKeyChanged, this, _1));
+	_modelKeyObserver.setCallback(std::bind(&EntityNode::_modelKeyChanged, this, std::placeholders::_1));
 	addKeyObserver("model", _modelKeyObserver);
 
 	// Connect the skin keyvalue change handler directly to the model node manager
-	_skinKeyObserver.setCallback(boost::bind(&ModelKey::skinChanged, &_modelKey, _1));
+	_skinKeyObserver.setCallback(std::bind(&ModelKey::skinChanged, &_modelKey, std::placeholders::_1));
 	addKeyObserver("skin", _skinKeyObserver);
 
 	_shaderParms.addKeyObservers();
@@ -158,28 +159,32 @@ void EntityNode::changeName(const std::string& newName) {
 	_namespaceManager.changeName(newName);
 }
 
-void EntityNode::onInsertIntoScene()
+void EntityNode::onInsertIntoScene(scene::IMapRootNode& root)
 {
-	_entity.instanceAttach(scene::findMapFile(getSelf()));
+    GlobalCounters().getCounter(counterEntities).increment();
+
+	_entity.connectUndoSystem(root.getUndoChangeTracker());
 
 	// Register our TargetableNode, now that we're in the scene
 	RenderableTargetInstances::Instance().attach(*this);
 
-	SelectableNode::onInsertIntoScene();
+	SelectableNode::onInsertIntoScene(root);
 }
 
-void EntityNode::onRemoveFromScene()
+void EntityNode::onRemoveFromScene(scene::IMapRootNode& root)
 {
-	SelectableNode::onRemoveFromScene();
+	SelectableNode::onRemoveFromScene(root);
 
 	RenderableTargetInstances::Instance().detach(*this);
-	_entity.instanceDetach(scene::findMapFile(getSelf()));
+	_entity.disconnectUndoSystem(root.getUndoChangeTracker());
+
+    GlobalCounters().getCounter(counterEntities).decrement();
 }
 
 void EntityNode::onChildAdded(const scene::INodePtr& child)
 {
 	// Let the child know which renderEntity it has - this has to happen before onChildAdded()
-	child->setRenderEntity(boost::dynamic_pointer_cast<IRenderEntity>(getSelf()));
+	child->setRenderEntity(this);
 
 	Node::onChildAdded(child);
 }
@@ -192,11 +197,11 @@ void EntityNode::onChildRemoved(const scene::INodePtr& child)
 
 	// greebo: Double-check that we're the currently assigned renderentity - in some cases nodes on the undostack
 	// keep references to child nodes - we should never NULLify renderentities of nodes that are not assigned to us
-	IRenderEntityPtr curRenderEntity = child->getRenderEntity();
+	IRenderEntity* curRenderEntity = child->getRenderEntity();
 
-	if (curRenderEntity && curRenderEntity.get() == static_cast<IRenderEntity*>(this))
+	if (curRenderEntity && curRenderEntity == this)
 	{
-		child->setRenderEntity(IRenderEntityPtr());	
+		child->setRenderEntity(nullptr);
 	}
 	else
 	{
@@ -299,7 +304,7 @@ void EntityNode::onPostUndo()
 	// without renderentity, rectify that
 	foreachNode([&] (const scene::INodePtr& child)->bool
 	{
-		child->setRenderEntity(boost::dynamic_pointer_cast<IRenderEntity>(getSelf()));
+		child->setRenderEntity(this);
 		return true;
 	});
 }
@@ -310,7 +315,7 @@ void EntityNode::onPostRedo()
 	// without renderentity, rectify that
 	foreachNode([&] (const scene::INodePtr& child)->bool
 	{
-		child->setRenderEntity(boost::dynamic_pointer_cast<IRenderEntity>(getSelf()));
+		child->setRenderEntity(this);
 		return true;
 	});
 }

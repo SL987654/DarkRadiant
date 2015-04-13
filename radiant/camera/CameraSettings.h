@@ -1,10 +1,12 @@
-#ifndef CAMERASETTINGS_H_
-#define CAMERASETTINGS_H_
+#pragma once
 
 #include <string>
 #include "iregistry.h"
 
 #include <sigc++/signal.h>
+
+namespace ui
+{
 
 /* greebo: This is the home of all the camera settings. As this class observes
  * the registry it can be connected to the according registry keys and gets
@@ -107,6 +109,6 @@ private:
 	void importDrawMode(const int mode);
 }; // class CameraSettings
 
-CameraSettings* getCameraSettings();
+} // namespace
 
-#endif /*CAMERASETTINGS_H_*/
+ui::CameraSettings* getCameraSettings();

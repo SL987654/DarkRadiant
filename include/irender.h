@@ -1,32 +1,12 @@
-/*
-Copyright (C) 2001-2006, William Joseph.
-All Rights Reserved.
-
-This file is part of GtkRadiant.
-
-GtkRadiant is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-GtkRadiant is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with GtkRadiant; if not, write to the Free Software
-Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-*/
 #pragma once
 
 #include "imodule.h"
-#include <boost/function/function_fwd.hpp>
+#include <functional>
 
 #include "math/Vector3.h"
-#include <boost/weak_ptr.hpp>
 
 #include "ShaderLayer.h"
+#include <sigc++/signal.h>
 
 /**
  * \file
@@ -132,7 +112,7 @@ template<typename Element> class BasicVector3;
 typedef BasicVector3<double> Vector3;
 
 class Shader;
-typedef boost::shared_ptr<Shader> ShaderPtr;
+typedef std::shared_ptr<Shader> ShaderPtr;
 
 /**
  * A RenderEntity represents a map entity as seen by the renderer.
@@ -162,7 +142,8 @@ public:
 	 */
 	virtual const ShaderPtr& getWireShader() const = 0;
 };
-typedef boost::shared_ptr<IRenderEntity> IRenderEntityPtr;
+typedef std::shared_ptr<IRenderEntity> IRenderEntityPtr;
+typedef std::weak_ptr<IRenderEntity> IRenderEntityWeakPtr;
 
 /**
  * \brief
@@ -173,7 +154,8 @@ class RendererLight :
 {
 public:
     virtual ~RendererLight() {}
-	virtual boost::shared_ptr<Shader> getShader() const = 0;
+
+    virtual const ShaderPtr& getShader() const = 0;
 
     /**
      * \brief
@@ -183,7 +165,7 @@ public:
      * of the bounding box for an omni light and the tip of the pyramid for a
      * projected light.
      */
-    virtual Vector3 worldOrigin() const = 0;
+    virtual const Vector3& worldOrigin() const = 0;
 
     /**
      * \brief
@@ -217,7 +199,7 @@ public:
      */
 	virtual Vector3 getLightOrigin() const = 0;
 };
-typedef boost::shared_ptr<RendererLight> RendererLightPtr;
+typedef std::shared_ptr<RendererLight> RendererLightPtr;
 
 inline std::ostream& operator<< (std::ostream& os, const RendererLight& l)
 {
@@ -254,12 +236,12 @@ public:
     /// Clear out all lights in the set of lights intersecting this object
     virtual void clearLights() {}
 };
-typedef boost::shared_ptr<LitObject> LitObjectPtr;
+typedef std::shared_ptr<LitObject> LitObjectPtr;
 
 class Renderable;
-typedef boost::function<void(const Renderable&)> RenderableCallback;
+typedef std::function<void(const Renderable&)> RenderableCallback;
 
-typedef boost::function<void(const RendererLight&)> RendererLightCallback;
+typedef std::function<void(const RendererLight&)> RendererLightCallback;
 
 /**
  * \brief
@@ -425,7 +407,7 @@ class ModuleObserver;
 #include "math/Vector3.h"
 
 class Material;
-typedef boost::shared_ptr<Material> MaterialPtr;
+typedef std::shared_ptr<Material> MaterialPtr;
 
 /**
  * A Shader represents a single material which can be rendered in OpenGL, which
@@ -500,7 +482,7 @@ public:
 /**
  * Shared pointer typedef for Shader.
  */
-typedef boost::shared_ptr<Shader> ShaderPtr;
+typedef std::shared_ptr<Shader> ShaderPtr;
 
 const std::string MODULE_RENDERSYSTEM("ShaderCache");
 
@@ -651,9 +633,12 @@ public:
 
   	// Initialises the OpenGL extensions
     virtual void extensionsInitialised() = 0;
+
+	// Subscription to get notified as soon as the openGL extensions have been initialised
+	virtual sigc::signal<void> signal_extensionsInitialised() = 0;
 };
-typedef boost::shared_ptr<RenderSystem> RenderSystemPtr;
-typedef boost::weak_ptr<RenderSystem> RenderSystemWeakPtr;
+typedef std::shared_ptr<RenderSystem> RenderSystemPtr;
+typedef std::weak_ptr<RenderSystem> RenderSystemWeakPtr;
 
 /**
  * \brief
@@ -663,7 +648,7 @@ inline RenderSystem& GlobalRenderSystem()
 {
 	// Cache the reference locally
 	static RenderSystem& _instance(
-		*boost::static_pointer_cast<RenderSystem>(
+		*std::static_pointer_cast<RenderSystem>(
 			module::GlobalModuleRegistry().getModule(MODULE_RENDERSYSTEM)
 		)
 	);

@@ -1,9 +1,8 @@
-#ifndef DOOM3ENTITY_H_
-#define DOOM3ENTITY_H_
+#pragma once
 
 #include <vector>
 #include "KeyValue.h"
-#include <boost/shared_ptr.hpp>
+#include <memory>
 
 /** greebo: This is the implementation of the class Entity.
  *
@@ -26,7 +25,7 @@ class Doom3Entity :
 {
 	IEntityClassPtr _eclass;
 
-	typedef boost::shared_ptr<KeyValue> KeyValuePtr;
+	typedef std::shared_ptr<KeyValue> KeyValuePtr;
 
 	// A key value pair using a dynamically allocated value
 	typedef std::pair<std::string, KeyValuePtr> KeyValuePair;
@@ -58,8 +57,8 @@ public:
 	void attachObserver(Observer* observer);
 	void detachObserver(Observer* observer);
 
-	void instanceAttach(MapFile* map);
-	void instanceDetach(MapFile* map);
+	void connectUndoSystem(IMapFileChangeTracker& changeTracker);
+    void disconnectUndoSystem(IMapFileChangeTracker& changeTracker);
 
 	/** Return the EntityClass associated with this entity.
 	 */
@@ -109,11 +108,6 @@ private:
 
 	KeyValues::iterator find(const std::string& key);
 	KeyValues::const_iterator find(const std::string& key) const;
-
-	void forEachKeyValue_instanceAttach(MapFile* map);
-	void forEachKeyValue_instanceDetach(MapFile* map);
 };
 
 } // namespace entity
-
-#endif /*DOOM3ENTITY_H_*/

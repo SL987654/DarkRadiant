@@ -1,71 +1,28 @@
-#ifndef IEVENTMANAGER_H_
-#define IEVENTMANAGER_H_
+#pragma once
 
 #include <list>
 #include <map>
 #include <string>
 
-#include <boost/shared_ptr.hpp>
+#include <memory>
 
 #include "imodule.h"
-#include "iselection.h"
-#include <boost/function/function_fwd.hpp>
+#include <functional>
 
-namespace Glib
-{
-template <class T>class RefPtr;
-}
-
-// GTK forward declaration
-namespace Gtk
-{
-	class Widget;
-	class Window;
-}
-
-typedef struct _GdkEventButton GdkEventButton;
-typedef struct _GdkEventKey GdkEventKey;
+class wxWindow;
+class wxMenuItem;
+class wxToolBarToolBase;
+class wxButton;
+class wxToggleButton;
+class wxMouseEvent;
+class wxKeyEvent;
+class wxToolBar;
+class wxTopLevelWindow;
 
 /* greebo: Below are the actual events that are "read" by the views/observers to
  * interpret the mouseclicks. */
 
 namespace ui {
-
-	// The possible modes when in "component manipulation mode"
-	enum XYViewEvent {
-		xyNothing,		// unrecognised event
-		xyMoveView,		// drag the view around
-		xySelect,		// selection / clip
-		xyZoom,			// drag-zoom operator
-		xyCameraMove,	// the button used to drag the camera around
-		xyCameraAngle,	// the button used to change camera angle
-		xyNewBrushDrag,	// used to create new brushes
-	};
-
-	// These are the buttons for the camera view
-	enum CamViewEvent {
-		camNothing,				// nothing special, event can be passed to the windowobservers
-		camEnableFreeLookMode,	// used to enable the free look mode in the camera view
-		camDisableFreeLookMode,	// used to disable the free look mode in the camera view
-	};
-
-	// If the click is passed to the windowobservers, these are the possibilites
-	enum ObserverEvent {
-		obsNothing,		// any uninterpreted/unsupported combination
-		obsManipulate,	// manipulate an object by drag or click
-		obsSelect,		// selection toggle
-		obsToggle,		// selection toggle
-		obsToggleGroupPart,	// selection toggle (part of group)
-		obsToggleFace,	// selection toggle (face)
-		obsReplace,		// replace/cycle selection through possible candidates
-		obsReplaceFace,	// replace/cycle selection through possible face candidates
-		obsCopyTexture,	// copy texture from object
-		obsPasteTextureProjected,	// paste texture to object (projected)
-		obsPasteTextureNatural,	// paste texture to object, but do not distort it
-		obsPasteTextureCoordinates, // paste the texture coordinates only (patch>>patch)
-		obsPasteTextureToBrush, // paste texture to all brush faces of the selected brush
-		obsJumpToObject, 		// focuses the cam & xyviews to the clicked object
-	};
 
 	// Enum used for events tracking the key state
 	enum KeyEventType
@@ -73,7 +30,7 @@ namespace ui {
 		KeyPressed,
 		KeyReleased,
 	};
-	typedef boost::function<void (KeyEventType)> KeyStateChangeCallback;
+	typedef std::function<void (KeyEventType)> KeyStateChangeCallback;
 
 } // namespace ui
 
@@ -90,9 +47,21 @@ public:
 	// Enables/disables this event
 	virtual void setEnabled(const bool enabled) = 0;
 
-	// Connect a GtkWidget to this event (the event must support the according widget).
-	virtual void connectWidget(Gtk::Widget* widget) = 0;
-	virtual void disconnectWidget(Gtk::Widget* widget) = 0;
+	// Connect a wxTopLevelWindow to this event
+	virtual void connectTopLevelWindow(wxTopLevelWindow* widget) = 0;
+	virtual void disconnectTopLevelWindow(wxTopLevelWindow* widget) = 0;
+
+	virtual void connectToolItem(wxToolBarToolBase* item) = 0;
+	virtual void disconnectToolItem(wxToolBarToolBase* item) = 0;
+
+	virtual void connectMenuItem(wxMenuItem* item) = 0;
+	virtual void disconnectMenuItem(wxMenuItem* item) = 0;
+
+	virtual void connectButton(wxButton* button) = 0;
+	virtual void disconnectButton(wxButton* button) = 0;
+
+	virtual void connectToggleButton(wxToggleButton* button) = 0;
+	virtual void disconnectToggleButton(wxToggleButton* button) = 0;
 
 	// Exports the current state to the widgets
 	virtual void updateWidgets() = 0;
@@ -108,7 +77,7 @@ public:
 	virtual bool empty() const = 0;
 };
 
-typedef boost::shared_ptr<IEvent> IEventPtr;
+typedef std::shared_ptr<IEvent> IEventPtr;
 
 class IAccelerator
 {
@@ -137,63 +106,16 @@ public:
 	virtual void visit(const std::string& eventName, const IEventPtr& event) = 0;
 };
 
-/* greebo: The mouse event manager provides methods to interpret mouse clicks.
- */
-class IMouseEvents {
-public:
-    // destructor
-	virtual ~IMouseEvents() {}
-
-	// Return the ObserverEvent type for a given GdkEventButton
-	virtual ui::CamViewEvent getCameraViewEvent(GdkEventButton* event) = 0;
-
-	// Return the ObserverEvent type for a given GdkEventButton
-	virtual ui::ObserverEvent getObserverEvent(GdkEventButton* event) = 0;
-	virtual ui::ObserverEvent getObserverEvent(const unsigned int state) = 0;
-
-	// Return the current XYView event for a GdkEventMotion state or an GdkEventButton
-	virtual ui::XYViewEvent getXYViewEvent(GdkEventButton* event) = 0;
-	virtual ui::XYViewEvent getXYViewEvent(const unsigned int state) = 0;
-
-	virtual bool stateMatchesXYViewEvent(const ui::XYViewEvent& xyViewEvent, GdkEventButton* event) = 0;
-	virtual bool stateMatchesXYViewEvent(const ui::XYViewEvent& xyViewEvent, const unsigned int state) = 0;
-
-	virtual bool stateMatchesObserverEvent(const ui::ObserverEvent& observerEvent, GdkEventButton* event) = 0;
-
-	virtual bool stateMatchesCameraViewEvent(const ui::CamViewEvent& camViewEvent, GdkEventButton* event) = 0;
-
-	virtual std::string printXYViewEvent(const ui::XYViewEvent& xyViewEvent) = 0;
-	virtual std::string printObserverEvent(const ui::ObserverEvent& observerEvent) = 0;
-
-	virtual float getCameraStrafeSpeed() = 0;
-	virtual float getCameraForwardStrafeFactor() = 0;
-	virtual bool strafeActive(unsigned int state) = 0;
-	virtual bool strafeForwardActive(unsigned int state) = 0;
-};
-
 const std::string MODULE_EVENTMANAGER("EventManager");
 
 // The function object invoked when a ToggleEvent is changing states
 // The passed boolean indicates the new toggle state (true = active/toggled)
-typedef boost::function<void(bool)> ToggleCallback;
+typedef std::function<void(bool)> ToggleCallback;
 
 class IEventManager :
 	public RegisterableModule
 {
 public:
-	/* greebo: This is to avoid cyclic dependencies, because the eventmanager depends
-	 * on the selectionsystem, the selectionsystem on the gridmodule, the gridmodule on
-	 * the eventmanager, and there we have our cycle. Call this before any mouse events
-	 * have to be interpreted!
-	 */
-	virtual void connectSelectionSystem(SelectionSystem* selectionSystem) = 0;
-
-	/* greebo: Returns the mouse event "manager" providing a separate interface for
-	 * handling mouse events. I moved this into a separate interface to keep
-	 * the IEventManager interface cleaner.
-	 */
-	virtual IMouseEvents& MouseEvents() = 0;
-
 	/* Create an accelerator using the given arguments and add it to the list
 	 *
 	 * @key: The symbolic name of the key, e.g. "A", "Esc"
@@ -201,8 +123,9 @@ public:
 	 *
 	 * @returns: the pointer to the newly created accelerator object */
 	virtual IAccelerator& addAccelerator(const std::string& key, const std::string& modifierStr) = 0;
+
 	// The same as above, but with GDK event values as argument (event->keyval, event->state)
-	virtual IAccelerator& addAccelerator(GdkEventKey* event) = 0;
+	virtual IAccelerator& addAccelerator(wxKeyEvent& ev) = 0;
 	virtual IAccelerator& findAccelerator(const IEventPtr& event) = 0;
 	virtual std::string getAcceleratorStr(const IEventPtr& event, bool forMenu) = 0;
 
@@ -222,7 +145,7 @@ public:
 
 	// Returns the pointer to the command specified by the <given> commandName
 	virtual IEventPtr findEvent(const std::string& name) = 0;
-	virtual IEventPtr findEvent(GdkEventKey* event) = 0;
+	virtual IEventPtr findEvent(wxKeyEvent& ev) = 0;
 
 	// Retrieves the event name for the given IEventPtr
 	virtual std::string getEventName(const IEventPtr& event) = 0;
@@ -232,18 +155,8 @@ public:
 	// Disconnects the given command from any accelerators
 	virtual void disconnectAccelerator(const std::string& command) = 0;
 
-	// Connects/disconnects the keyboard handlers of the keyeventmanager to the specified window, so that key events are caught
-	virtual void connect(Gtk::Widget* widget) = 0;
-	virtual void disconnect(Gtk::Widget* widget) = 0;
-
-	// Connects/Disconnects a Dialog Window to the eventmanager. Dialog windows get the chance
-	// to process an incoming keypress event, BEFORE the global shortcuts are searched and launched.
-	virtual void connectDialogWindow(Gtk::Window* window) = 0;
-	virtual void disconnectDialogWindow(Gtk::Window* window) = 0;
-
-	// Tells the key event manager about the main window so that the accelgroup can be connected correctly
-	virtual void connectAccelGroup(Gtk::Window* window) = 0;
-	virtual void connectAccelGroup(const Glib::RefPtr<Gtk::Window>& window) = 0;
+	// Before destruction, it's advisable to disconnect any events from a toolbar's items
+	virtual void disconnectToolbar(wxToolBar* toolbar) = 0;
 
 	// Loads the shortcut->command associations from the XMLRegistry
 	virtual void loadAccelerators() = 0;
@@ -267,25 +180,19 @@ public:
 	 */
 	virtual std::string getModifierStr(const unsigned int modifierFlags, bool forMenu = false) = 0;
 
-	/* greebo: Retrieves the string representation of the given GDK <event>
+	/* greebo: Retrieves the string representation of the given event
 	 */
-	virtual std::string getGDKEventStr(GdkEventKey* event) = 0;
-
-	/** greebo: Returns the current keyboard eventkey state
-	 */
-	virtual unsigned int getModifierState() = 0;
+	virtual std::string getEventStr(wxKeyEvent& ev) = 0;
 };
-typedef boost::shared_ptr<IEventManager> IEventManagerPtr;
+typedef std::shared_ptr<IEventManager> IEventManagerPtr;
 
 // This is the accessor for the event manager
 inline IEventManager& GlobalEventManager() {
 	// Cache the reference locally
 	static IEventManager& _eventManager(
-		*boost::static_pointer_cast<IEventManager>(
+		*std::static_pointer_cast<IEventManager>(
 			module::GlobalModuleRegistry().getModule(MODULE_EVENTMANAGER)
 		)
 	);
 	return _eventManager;
 }
-
-#endif /*IEVENTMANAGER_H_*/

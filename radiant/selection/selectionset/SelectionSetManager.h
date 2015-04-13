@@ -1,5 +1,4 @@
-#ifndef _SELECTION_SET_MANAGER_H_
-#define _SELECTION_SET_MANAGER_H_
+#pragma once
 
 #include "iselectionset.h"
 #include "iradiant.h"
@@ -8,23 +7,31 @@
 #include <map>
 #include "SelectionSet.h"
 
-#include <boost/enable_shared_from_this.hpp>
+#include <wx/event.h>
+#include <wx/toolbar.h>
 
 namespace selection
 {
 
+class SelectionSetToolmenu;
+
 class SelectionSetManager :
 	public ISelectionSetManager,
-	public boost::enable_shared_from_this<SelectionSetManager>
+	public std::enable_shared_from_this<SelectionSetManager>,
+	public wxEvtHandler
 {
-private:
-	typedef std::set<ISelectionSetManager::Observer*> Observers;
-	Observers _observers;
+    // Signal emitted when contents changes
+    sigc::signal<void> _sigSelectionSetsChanged;
 
 	typedef std::map<std::string, SelectionSetPtr> SelectionSets;
 	SelectionSets _selectionSets;
 
+	SelectionSetToolmenu* _toolMenu;
+	wxToolBarToolBase* _clearAllButton;
+
 public:
+    SelectionSetManager();
+
 	// RegisterableModule implementation
 	const std::string& getName() const;
 	const StringSet& getDependencies() const;
@@ -33,10 +40,8 @@ public:
 
 	void onRadiantStartup();
 
-	// ISelectionManager implementation
-	void addObserver(Observer& observer);
-	void removeObserver(Observer& observer);
-
+	// ISelectionSetManager implementation
+    sigc::signal<void> signal_selectionSetsChanged() const;
 	void foreachSelectionSet(Visitor& visitor);
 	void foreachSelectionSet(const VisitorFunc& functor);
 	ISelectionSetPtr createSelectionSet(const std::string& name);
@@ -45,12 +50,11 @@ public:
 	ISelectionSetPtr findSelectionSet(const std::string& name);
 
 	// Command target
-	void deleteAllSelectionSets(const cmd::ArgumentList& args);
+	void deleteAllSelectionSetsCmd(const cmd::ArgumentList& args);
 
 private:
-	void notifyObservers();
+	void onDeleteAllSetsClicked(wxCommandEvent& ev);
 };
 
 } // namespace
 
-#endif /* _SELECTION_SET_MANAGER_H_ */

@@ -6,14 +6,13 @@
 
 #include <set>
 #include <string>
-#include <boost/shared_ptr.hpp>
-#include <boost/weak_ptr.hpp>
+#include <memory>
 
 class AABB;
 class Matrix4;
 
 class IRenderEntity;
-typedef boost::shared_ptr<IRenderEntity> IRenderEntityPtr;
+typedef std::shared_ptr<IRenderEntity> IRenderEntityPtr;
 
 namespace scene
 {
@@ -49,11 +48,14 @@ public:
 };
 
 class INode;
-typedef boost::shared_ptr<INode> INodePtr;
-typedef boost::weak_ptr<INode> INodeWeakPtr;
+typedef std::shared_ptr<INode> INodePtr;
+typedef std::weak_ptr<INode> INodeWeakPtr;
+
+class IMapRootNode;
+typedef std::shared_ptr<IMapRootNode> IMapRootNodePtr;
 
 class Graph;
-typedef boost::shared_ptr<Graph> GraphPtr;
+typedef std::shared_ptr<Graph> GraphPtr;
 
 class NodeVisitor
 {
@@ -93,7 +95,8 @@ public:
 		Unknown = 0,
 		MapRoot,
 		Entity,
-		Primitive,		// Brush or Patch
+		Brush,
+        Patch,
 		Model,
 		Particle,
 	};
@@ -188,14 +191,14 @@ public:
 	/**
 	 * greebo: Gets called after the node has been inserted into the scene.
 	 */
-	virtual void onInsertIntoScene() = 0;
+	virtual void onInsertIntoScene(IMapRootNode& root) = 0;
 
 	/**
 	 * greebo: This gets called by the SceneGraph before the Node is actually
 	 * removed from the scene. This gives the node the opportunity to
 	 * change its "selected" status or anything else.
 	 */
-	virtual void onRemoveFromScene() = 0;
+    virtual void onRemoveFromScene(IMapRootNode& root) = 0;
 
 	/**
 	 * Returns true if this node is in the scene
@@ -203,8 +206,8 @@ public:
 	virtual bool inScene() const = 0;
 
 	// Get/Set the render entity this node is attached to
-	virtual const IRenderEntityPtr& getRenderEntity() const = 0;
-	virtual void setRenderEntity(const IRenderEntityPtr& entity) = 0;
+	virtual IRenderEntity* getRenderEntity() const = 0;
+	virtual void setRenderEntity(IRenderEntity* entity) = 0;
 
 	// Call this if the node gets changed in any way or gets inserted somewhere.
 	virtual void boundsChanged() = 0;

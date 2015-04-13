@@ -1,19 +1,18 @@
 #pragma once
 
-#include <boost/shared_ptr.hpp>
+#include <memory>
 #include <map>
 #include "iscenegraph.h"
 #include "GraphTreeNode.h"
 
-#include <gtkmm/treestore.h>
-#include <gtkmm/treeselection.h>
+#include "wxutil/TreeModel.h"
 
 namespace ui
 {
 
 /**
- * greebo: This wraps around a GtkTreeModel which can be used
- *         in a GtkTreeView visualisation.
+ * greebo: This wraps around a wxutil::TreeModel which can be used
+ * in a tree visualisation of the global scenegraph.
  *
  * The class provides basic routines to insert/remove scene::INodePtrs
  * into the model (the lookup should be performed fast).
@@ -23,25 +22,28 @@ class GraphTreeModel :
 {
 public:
 	struct TreeColumns :
-		public Gtk::TreeModel::ColumnRecord
+		public wxutil::TreeModel::ColumnRecord
 	{
-		TreeColumns() { add(node); add(name); }
+		TreeColumns() :
+			node(add(wxutil::TreeModel::Column::Integer)),
+			name(add(wxutil::TreeModel::Column::String))
+		{}
 
-		Gtk::TreeModelColumn<scene::INode*> node;	// node ptr
-		Gtk::TreeModelColumn<Glib::ustring> name;	// name
+		wxutil::TreeModel::Column node;	// node ptr
+		wxutil::TreeModel::Column name;	// name
 	};
 
 private:
 	// This maps scene::Nodes to TreeNode structures to allow fast lookups in the tree
-	typedef std::map<scene::INodeWeakPtr, GraphTreeNodePtr> NodeMap;
+    typedef std::map<scene::INodeWeakPtr, GraphTreeNodePtr, std::owner_less<scene::INodeWeakPtr> > NodeMap;
 	NodeMap _nodemap;
 
 	// The NULL treenode, must always be empty
 	const GraphTreeNodePtr _nullTreeNode;
 
-	// The actual GTK model
+	// The actual model
 	TreeColumns _columns;
-	Glib::RefPtr<Gtk::TreeStore> _model;
+	wxutil::TreeModel::Ptr _model;
 
 	// The flag whether to skip invisible items
 	bool _visibleNodesOnly;
@@ -65,16 +67,21 @@ public:
 	void setConsiderVisibleNodesOnly(bool visibleOnly);
 
 	// Rebuilds the entire tree using a scene::Graph::Walker
+    // This will clear the internal wxutil::TreeModel and create a new one, so be 
+    // sure to associate the TreeView with the new model by calling getModel()
 	void refresh();
 
+	typedef std::function<void (const wxDataViewItem&, bool)> NotifySelectionUpdateFunc;
+
 	// Updates the selection status of the entire tree
-	void updateSelectionStatus(const Glib::RefPtr<Gtk::TreeSelection>& selection);
+	void updateSelectionStatus(const NotifySelectionUpdateFunc& notifySelectionChanged);
 
 	// Updates the selection status of the given node only
-	void updateSelectionStatus(const Glib::RefPtr<Gtk::TreeSelection>& selection, const scene::INodePtr& node);
+	void updateSelectionStatus(const scene::INodePtr& node,
+		const NotifySelectionUpdateFunc& notifySelectionChanged);
 
 	const TreeColumns& getColumns() const;
-	Glib::RefPtr<Gtk::TreeModel> getModel();
+	wxutil::TreeModel::Ptr getModel();
 
 	// Connects/disconnects this class as SceneObserver
 	void connectToSceneGraph();
@@ -93,7 +100,7 @@ private:
 
 	// Tries to lookup the iterator to the parent item of the given node,
 	// returns NULL if not found
-	Gtk::TreeModel::iterator findParentIter(const scene::INodePtr& node) const;
+	wxDataViewItem findParentIter(const scene::INodePtr& node) const;
 };
 
 } // namespace ui

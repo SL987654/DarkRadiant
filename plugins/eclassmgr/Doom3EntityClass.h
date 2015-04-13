@@ -11,8 +11,7 @@
 
 #include <vector>
 #include <map>
-//#include <boost/algorithm/string.hpp>
-#include <boost/scoped_ptr.hpp>
+#include <memory>
 
 /* FORWARD DECLS */
 
@@ -22,7 +21,7 @@ namespace eclass
 {
 
 class Doom3EntityClass;
-typedef boost::shared_ptr<Doom3EntityClass> Doom3EntityClassPtr;
+typedef std::shared_ptr<Doom3EntityClass> Doom3EntityClassPtr;
 
 /**
  * Implementation of the IEntityClass interface. This represents a single
@@ -31,7 +30,7 @@ typedef boost::shared_ptr<Doom3EntityClass> Doom3EntityClassPtr;
 class Doom3EntityClass
 : public IEntityClass
 {
-    typedef boost::shared_ptr<std::string> StringPtr;
+    typedef std::shared_ptr<std::string> StringPtr;
 
     class StringCompareFunctor
     {
@@ -96,7 +95,7 @@ class Doom3EntityClass
 
     // Helper object to manage attached entities
     class Attachments;
-    boost::scoped_ptr<Attachments> _attachments;
+    std::unique_ptr<Attachments> _attachments;
 
     // The time this def has been parsed
     std::size_t _parseStamp;
@@ -158,7 +157,7 @@ public:
     const std::string& getFillShader() const;
     EntityClassAttribute& getAttribute(const std::string& name);
     const EntityClassAttribute& getAttribute(const std::string& name) const;
-    void forEachClassAttribute(boost::function<void(const EntityClassAttribute&)>,
+    void forEachClassAttribute(std::function<void(const EntityClassAttribute&)>,
                                bool) const;
 
     const std::string& getModelPath() const { return _model; }
@@ -216,6 +215,6 @@ public:
 /**
  * Pointer typedef.
  */
-typedef boost::shared_ptr<Doom3EntityClass> Doom3EntityClassPtr;
+typedef std::shared_ptr<Doom3EntityClass> Doom3EntityClassPtr;
 
 }

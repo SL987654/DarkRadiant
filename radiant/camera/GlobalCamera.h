@@ -1,14 +1,19 @@
-#ifndef GLOBALCAMERA_H_
-#define GLOBALCAMERA_H_
+#pragma once
 
 #include <map>
 #include "icamera.h"
 #include "icommandsystem.h"
 #include "ieventmanager.h"
+#include "imousetoolmanager.h"
 
 #include "CamWnd.h"
 #include "FloatingCamWnd.h"
 #include "CameraObserver.h"
+
+class wxWindow;
+
+namespace ui
+{
 
 /**
  * greebo: This is the gateway class to access the currently active CamWindow
@@ -27,23 +32,18 @@ private:
 	// The currently active camera window (-1 if no cam active)
 	int _activeCam;
 
-	// The parent widget for the camera window (this should be the main frame)
-	Glib::RefPtr<Gtk::Window> _parent;
-
 	// The connected callbacks (get invoked when movedNotify() is called)
 	CameraObserverList _cameraObservers;
 
-	// The window position tracker
-	gtkutil::WindowPosition _windowPosition;
+    unsigned int _toggleStrafeModifierFlags;
+    unsigned int _toggleStrafeForwardModifierFlags;
+
+    float _strafeSpeed;
+    float _forwardStrafeFactor;
 
 public:
 	// Constructor
 	GlobalCameraManager();
-
-	/**
-	 * Specifies the parent window which should be used for the CamWnd.
-	 */
-	void setParent(const Glib::RefPtr<Gtk::Window>& parent);
 
 	/**
 	 * Returns the currently active CamWnd or NULL if none is active.
@@ -53,7 +53,7 @@ public:
 	/**
 	 * Create a new camera window, ready for packing into a parent widget.
 	 */
-	CamWndPtr createCamWnd();
+	CamWndPtr createCamWnd(wxWindow* parent);
 
 	// Remove the camwnd with the given ID
 	void removeCamWnd(int id);
@@ -112,6 +112,15 @@ public:
 	void pitchUpDiscrete(const cmd::ArgumentList& args);
 	void pitchDownDiscrete(const cmd::ArgumentList& args);
 
+    // Camera strafe behaviour
+    float getCameraStrafeSpeed();
+    float getCameraForwardStrafeFactor();
+    unsigned int getStrafeModifierFlags();
+    unsigned int getStrafeForwardModifierFlags();
+
+    MouseToolStack getMouseToolsForEvent(wxMouseEvent& ev);
+    void foreachMouseTool(const std::function<void(const ui::MouseToolPtr&)>& func);
+
 public:
 	// Callbacks for the named camera KeyEvents
 	void onFreelookMoveForwardKey(ui::KeyEventType eventType);
@@ -130,10 +139,10 @@ public:
 private:
 	// greebo: The construct method registers all the commands
 	void registerCommands();
+    void loadCameraStrafeDefinitions();
+};
 
-}; // class GlobalCameraManager
+} // namespace
 
 // The accessor function that contains the static instance of the GlobalCameraManager class
-GlobalCameraManager& GlobalCamera();
-
-#endif /*GLOBALCAMERA_H_*/
+ui::GlobalCameraManager& GlobalCamera();

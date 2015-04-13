@@ -1,11 +1,11 @@
-#ifndef COUNTERMANAGER_H_
-#define COUNTERMANAGER_H_
+#pragma once
 
 #include "icounter.h"
 #include "iuimanager.h"
+#include "wxutil/event/SingleIdleCallback.h"
 
 #include <map>
-#include <boost/shared_ptr.hpp>
+#include <memory>
 
 namespace map {
 
@@ -42,11 +42,12 @@ public:
 		return _count;
 	}
 };
-typedef boost::shared_ptr<Counter> CounterPtr;
+typedef std::shared_ptr<Counter> CounterPtr;
 
 class CounterManager :
 	public ICounterManager,
-	public ICounter::Observer
+	public ICounter::Observer,
+	protected wxutil::SingleIdleCallback
 {
 	typedef std::map<CounterType, CounterPtr> CounterMap;
 	CounterMap _counters;
@@ -64,8 +65,9 @@ public:
 	const std::string& getName() const;
 	const StringSet& getDependencies() const;
 	void initialiseModule(const ApplicationContext& ctx);
+
+protected:
+	void onIdle();
 };
 
 } // namespace map
-
-#endif /*COUNTERMANAGER_H_*/

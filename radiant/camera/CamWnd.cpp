@@ -5,11 +5,12 @@
 #include "iuimanager.h"
 #include "ieventmanager.h"
 #include "imainframe.h"
+#include "itextstream.h"
 
-#include "gtkutil/GLWidgetSentry.h"
 #include <time.h>
 #include <boost/format.hpp>
 
+#include "util/ScopedBoolLock.h"
 #include "iselectiontest.h"
 #include "selectionlib.h"
 #include "gamelib.h"
@@ -18,14 +19,21 @@
 #include "CameraSettings.h"
 #include "GlobalCamera.h"
 #include "render/RenderStatistics.h"
+#include "render/frontend/RenderableCollectionWalker.h"
+#include "wxutil/MouseButton.h"
 #include "registry/adaptors.h"
 #include "selection/OccludeSelector.h"
+#include "selection/Device.h"
+#include "selection/SelectionTest.h"
 
-#include <boost/bind.hpp>
+#include "debugging/debugging.h"
+#include <wx/sizer.h>
+#include "util/ScopedBoolLock.h"
+#include <functional>
+#include <sigc++/retype_return.h>
 
-#include <gtkmm/main.h>
-#include <gtkmm/image.h>
-#include <gtkmm/radiotoolbutton.h>
+namespace ui
+{
 
 namespace
 {
@@ -34,6 +42,7 @@ namespace
     const std::string FAR_CLIP_IN_TEXT = "Move far clip plane closer";
     const std::string FAR_CLIP_OUT_TEXT = "Move far clip plane further away";
     const std::string FAR_CLIP_DISABLED_TEXT = " (currently disabled in preferences)";
+    const char* const RKEY_SELECT_EPSILON = "user/ui/selectionEpsilon";
 }
 
 class ObjectFinder :
@@ -79,10 +88,10 @@ public:
     }
 };
 
-inline WindowVector windowvector_for_widget_centre(Gtk::Widget& widget)
+inline Vector2 windowvector_for_widget_centre(wxutil::GLWidget& widget)
 {
-    Gtk::Allocation alloc = widget.get_allocation();
-    return WindowVector(static_cast<float>(alloc.get_width() / 2), static_cast<float>(alloc.get_height() / 2));
+    wxSize size = widget.GetSize();
+	return Vector2(static_cast<float>(size.GetWidth() / 2), static_cast<float>(size.GetHeight() / 2));
 }
 
 class FloorHeightWalker :
@@ -129,60 +138,76 @@ public:
 
 // ---------- CamWnd Implementation --------------------------------------------------
 
-CamWnd::CamWnd() :
-    gtkutil::GladeWidgetHolder("CamWnd.glade"),
-    _mainWidget(gladeWidget<Gtk::Container>("mainVbox")),
+CamWnd::CamWnd(wxWindow* parent) :
+	_mainWxWidget(loadNamedPanel(parent, "CamWndPanel")),
     _id(++_maxId),
-    m_view(true),
-    m_Camera(&m_view, Callback(boost::bind(&CamWnd::queueDraw, this))),
-    m_cameraview(m_Camera, &m_view, Callback(boost::bind(&CamWnd::update, this))),
-    m_drawing(false),
-    m_bFreeMove(false),
-    _camGLWidget(Gtk::manage(new gtkutil::GLWidget(true, "CamWnd"))),
-    _timer(MSEC_PER_FRAME, _onFrame, this),
-    m_window_observer(NewWindowObserver()),
-    m_deferredDraw(boost::bind(&gtkutil::GLWidget::queue_draw, _camGLWidget)),
-    m_deferred_motion(boost::bind(&CamWnd::_onDeferredMouseMotion, this, _1, _2, _3))
+    _view(true),
+    _camera(&_view, Callback(std::bind(&CamWnd::queueDraw, this))),
+    _cameraView(_camera, &_view, Callback(std::bind(&CamWnd::update, this))),
+    _drawing(false),
+    _freeMoveEnabled(false),
+	_wxGLWidget(new wxutil::GLWidget(_mainWxWidget, std::bind(&CamWnd::onRender, this), "CamWnd")),
+    _timer(this),
+    _timerLock(false),
+    _deferredDraw(std::bind(&CamWnd::performDeferredDraw, this))
 {
-    m_window_observer->setRectangleDrawCallback(
-        boost::bind(&CamWnd::updateSelectionBox, this, _1)
-    );
-    m_window_observer->setView(m_view);
+	Connect(wxEVT_TIMER, wxTimerEventHandler(CamWnd::onFrame), NULL, this);
 
     constructGUIComponents();
 
     GlobalMap().signal_mapValidityChanged().connect(
-        sigc::mem_fun(m_deferredDraw, &DeferredDraw::onMapValidChanged)
+        sigc::mem_fun(_deferredDraw, &DeferredDraw::onMapValidChanged)
     );
 
     // Deactivate all commands, just to make sure
     disableDiscreteMoveEvents();
     disableFreeMoveEvents();
 
+    // Connect the mouse button events
+    _wxGLWidget->Connect(wxEVT_LEFT_DOWN, wxMouseEventHandler(CamWnd::onGLMouseButtonPress), NULL, this);
+    _wxGLWidget->Connect(wxEVT_LEFT_DCLICK, wxMouseEventHandler(CamWnd::onGLMouseButtonPress), NULL, this);
+    _wxGLWidget->Connect(wxEVT_LEFT_UP, wxMouseEventHandler(CamWnd::onGLMouseButtonRelease), NULL, this);
+    _wxGLWidget->Connect(wxEVT_RIGHT_DOWN, wxMouseEventHandler(CamWnd::onGLMouseButtonPress), NULL, this);
+    _wxGLWidget->Connect(wxEVT_RIGHT_DCLICK, wxMouseEventHandler(CamWnd::onGLMouseButtonPress), NULL, this);
+    _wxGLWidget->Connect(wxEVT_RIGHT_UP, wxMouseEventHandler(CamWnd::onGLMouseButtonRelease), NULL, this);
+    _wxGLWidget->Connect(wxEVT_MIDDLE_DOWN, wxMouseEventHandler(CamWnd::onGLMouseButtonPress), NULL, this);
+    _wxGLWidget->Connect(wxEVT_MIDDLE_DCLICK, wxMouseEventHandler(CamWnd::onGLMouseButtonPress), NULL, this);
+    _wxGLWidget->Connect(wxEVT_MIDDLE_UP, wxMouseEventHandler(CamWnd::onGLMouseButtonRelease), NULL, this);
+
     // Now add the handlers for the non-freelook mode, the events are activated by this
     addHandlersMove();
 
-    _camGLWidget->signal_scroll_event().connect(sigc::mem_fun(*this, &CamWnd::onMouseScroll));
+    // Clicks are eaten when the FreezePointer is active, request to receive them
+    _freezePointer.connectMouseEvents(
+        std::bind(&CamWnd::onGLMouseButtonPress, this, std::placeholders::_1),
+        std::bind(&CamWnd::onGLMouseButtonRelease, this, std::placeholders::_1));
 
     // Subscribe to the global scene graph update
     GlobalSceneGraph().addSceneObserver(this);
 
-    // Let the window observer connect its handlers to the GL widget first
-    // (before the eventmanager)
-    m_window_observer->addObservedWidget(_camGLWidget);
+	_glExtensionsInitialisedNotifier = GlobalRenderSystem().signal_extensionsInitialised().connect(
+		sigc::mem_fun(this, &CamWnd::onGLExtensionsInitialised));
+}
 
-    GlobalEventManager().connect(_camGLWidget);
+wxWindow* CamWnd::getMainWidget() const
+{ 
+	return _mainWxWidget;
 }
 
 void CamWnd::constructToolbar()
 {
-    // If lighting is not available, grey out the lighting button
-    Gtk::ToggleToolButton* lightingBtn = gladeWidget<Gtk::ToggleToolButton>(
-        "lightingBtn"
-    );
+	// If lighting is not available, grey out the lighting button
+	wxToolBar* camToolbar = findNamedObject<wxToolBar>(_mainWxWidget, "CamToolbar");
+
+	const wxToolBarToolBase* wireframeBtn = getToolBarToolByLabel(camToolbar, "wireframeBtn");
+	const wxToolBarToolBase* flatShadeBtn = getToolBarToolByLabel(camToolbar, "flatShadeBtn");
+	const wxToolBarToolBase* texturedBtn = getToolBarToolByLabel(camToolbar, "texturedBtn");
+	const wxToolBarToolBase* lightingBtn = getToolBarToolByLabel(camToolbar, "lightingBtn");
+
     if (!GlobalRenderSystem().shaderProgramsAvailable())
     {
-        lightingBtn->set_sensitive(false);
+        //lightingBtn->set_sensitive(false);
+		camToolbar->EnableTool(lightingBtn->GetId(), false);
     }
 
     // Listen for render-mode changes, and set the correct active button to
@@ -193,131 +218,149 @@ void CamWnd::constructToolbar()
     updateActiveRenderModeButton();
 
     // Connect button signals
-    gladeWidget<Gtk::ToggleToolButton>("texturedBtn")->signal_toggled().connect(
-        sigc::mem_fun(*this, &CamWnd::onRenderModeButtonsChanged)
-    );
-    lightingBtn->signal_toggled().connect(
-        sigc::mem_fun(*this, &CamWnd::onRenderModeButtonsChanged)
-    );
-    gladeWidget<Gtk::ToggleToolButton>("flatShadeBtn")->signal_toggled().connect(
-        sigc::mem_fun(*this, &CamWnd::onRenderModeButtonsChanged)
-    );
-    gladeWidget<Gtk::ToggleToolButton>("wireframeBtn")->signal_toggled().connect(
-        sigc::mem_fun(*this, &CamWnd::onRenderModeButtonsChanged)
-    );
+	_mainWxWidget->GetParent()->Connect(wireframeBtn->GetId(), wxEVT_COMMAND_TOOL_CLICKED, 
+		wxCommandEventHandler(CamWnd::onRenderModeButtonsChanged), NULL, this);
+	_mainWxWidget->GetParent()->Connect(flatShadeBtn->GetId(), wxEVT_COMMAND_TOOL_CLICKED, 
+		wxCommandEventHandler(CamWnd::onRenderModeButtonsChanged), NULL, this);
+	_mainWxWidget->GetParent()->Connect(texturedBtn->GetId(), wxEVT_COMMAND_TOOL_CLICKED, 
+		wxCommandEventHandler(CamWnd::onRenderModeButtonsChanged), NULL, this);
+	_mainWxWidget->GetParent()->Connect(lightingBtn->GetId(), wxEVT_COMMAND_TOOL_CLICKED, 
+		wxCommandEventHandler(CamWnd::onRenderModeButtonsChanged), NULL, this);
 
     // Far clip buttons.
-    gladeWidget<Gtk::ToolButton>("clipPlaneInButton")->signal_clicked().connect(
-        sigc::mem_fun(*this, &CamWnd::farClipPlaneIn)
-    );
-    gladeWidget<Gtk::ToolButton>("clipPlaneOutButton")->signal_clicked().connect(
-        sigc::mem_fun(*this, &CamWnd::farClipPlaneOut)
-    );
+	wxToolBar* miscToolbar = static_cast<wxToolBar*>(_mainWxWidget->FindWindow("MiscToolbar"));
+
+	const wxToolBarToolBase* clipPlaneInButton = getToolBarToolByLabel(miscToolbar, "clipPlaneInButton");
+	const wxToolBarToolBase* clipPlaneOutButton = getToolBarToolByLabel(miscToolbar, "clipPlaneOutButton");
+
+	_mainWxWidget->GetParent()->Connect(clipPlaneInButton->GetId(), wxEVT_COMMAND_TOOL_CLICKED, 
+		wxCommandEventHandler(CamWnd::onFarClipPlaneInClick), NULL, this);
+	_mainWxWidget->GetParent()->Connect(clipPlaneOutButton->GetId(), wxEVT_COMMAND_TOOL_CLICKED, 
+		wxCommandEventHandler(CamWnd::onFarClipPlaneOutClick), NULL, this);
 
     setFarClipButtonSensitivity();
+
     GlobalRegistry().signalForKey(RKEY_ENABLE_FARCLIP).connect(
         sigc::mem_fun(*this, &CamWnd::setFarClipButtonSensitivity)
     );
 
-    gladeWidget<Gtk::ToolButton>("startTimeButton")->signal_clicked().connect(
-        sigc::mem_fun(*this, &CamWnd::startRenderTime)
-    );
-    gladeWidget<Gtk::ToolButton>("stopTimeButton")->signal_clicked().connect(
-        sigc::mem_fun(*this, &CamWnd::stopRenderTime)
-    );
+	const wxToolBarToolBase* startTimeButton = getToolBarToolByLabel(miscToolbar, "startTimeButton");
+	const wxToolBarToolBase* stopTimeButton = getToolBarToolByLabel(miscToolbar, "stopTimeButton");
+
+	_mainWxWidget->GetParent()->Connect(startTimeButton->GetId(), wxEVT_COMMAND_TOOL_CLICKED, 
+		wxCommandEventHandler(CamWnd::onStartTimeButtonClick), NULL, this);
+	_mainWxWidget->GetParent()->Connect(stopTimeButton->GetId(), wxEVT_COMMAND_TOOL_CLICKED, 
+		wxCommandEventHandler(CamWnd::onStopTimeButtonClick), NULL, this);
 
     // Stop time, initially
     stopRenderTime();
 
-    Gtk::Widget* toolbar = gladeWidget<Gtk::Widget>("camToolbar");
-
     // Hide the toolbar if requested
     if (!getCameraSettings()->showCameraToolbar())
     {
-        toolbar->hide();
-        toolbar->set_no_show_all(true);
+        camToolbar->Hide();
     }
 
     // Connect to show/hide registry key
     registry::observeBooleanKey(
        RKEY_SHOW_CAMERA_TOOLBAR,
-       sigc::mem_fun(toolbar, &Gtk::Widget::show),
-       sigc::mem_fun(toolbar, &Gtk::Widget::hide)
+       sigc::hide_return(sigc::bind(sigc::mem_fun(camToolbar, &wxWindowBase::Show), true)),
+       sigc::hide_return(sigc::mem_fun(camToolbar, &wxWindowBase::Hide))
     );
+}
+
+void CamWnd::onGLExtensionsInitialised()
+{
+	// If lighting is not available, grey out the lighting button
+	wxToolBar* camToolbar = findNamedObject<wxToolBar>(_mainWxWidget, "CamToolbar");
+	const wxToolBarToolBase* lightingBtn = getToolBarToolByLabel(camToolbar, "lightingBtn");
+
+	camToolbar->EnableTool(lightingBtn->GetId(), GlobalRenderSystem().shaderProgramsAvailable());
 }
 
 void CamWnd::setFarClipButtonSensitivity()
 {
     // Only enabled if cubic clipping is enabled.
     bool enabled = registry::getValue<bool>(RKEY_ENABLE_FARCLIP, true);
-    gladeWidget<Gtk::Widget>("clipPlaneInButton")->set_sensitive(enabled);
-    gladeWidget<Gtk::Widget>("clipPlaneOutButton")->set_sensitive(enabled);
+
+	wxToolBar* miscToolbar = static_cast<wxToolBar*>(_mainWxWidget->FindWindow("MiscToolbar"));
+
+	wxToolBarToolBase* clipPlaneInButton = 
+		const_cast<wxToolBarToolBase*>(getToolBarToolByLabel(miscToolbar, "clipPlaneInButton"));
+	wxToolBarToolBase* clipPlaneOutButton = 
+		const_cast<wxToolBarToolBase*>(getToolBarToolByLabel(miscToolbar, "clipPlaneOutButton"));
+
+	miscToolbar->EnableTool(clipPlaneInButton->GetId(), enabled);
+	miscToolbar->EnableTool(clipPlaneOutButton->GetId(), enabled);
 
     // Update tooltips so users know why they are disabled
-    gladeWidget<Gtk::Widget>("clipPlaneInButton")->set_tooltip_text(
-        FAR_CLIP_IN_TEXT + (enabled ? "" : FAR_CLIP_DISABLED_TEXT)
-    );
-    gladeWidget<Gtk::Widget>("clipPlaneOutButton")->set_tooltip_text(
-        FAR_CLIP_OUT_TEXT + (enabled ? "" : FAR_CLIP_DISABLED_TEXT)
-    );
+	clipPlaneInButton->SetShortHelp(FAR_CLIP_IN_TEXT + (enabled ? "" : FAR_CLIP_DISABLED_TEXT));
+	clipPlaneOutButton->SetShortHelp(FAR_CLIP_OUT_TEXT + (enabled ? "" : FAR_CLIP_DISABLED_TEXT));
 }
 
 void CamWnd::constructGUIComponents()
 {
     constructToolbar();
 
-    // Set up GL widget
-    _camGLWidget->set_events(  Gdk::EXPOSURE_MASK 
-                             | Gdk::BUTTON_PRESS_MASK 
-                             | Gdk::BUTTON_RELEASE_MASK 
-                             | Gdk::POINTER_MOTION_MASK 
-                             | Gdk::SCROLL_MASK);
-    _camGLWidget->set_flags(Gtk::CAN_FOCUS);
-    _camGLWidget->set_size_request(CAMWND_MINSIZE_X, CAMWND_MINSIZE_Y);
-    _camGLWidget->property_can_focus() = true;
+	// Set up wxGL widget
+	_wxGLWidget->SetCanFocus(false);
+	_wxGLWidget->SetMinClientSize(wxSize(CAMWND_MINSIZE_X, CAMWND_MINSIZE_Y));
+	_wxGLWidget->Connect(wxEVT_SIZE, wxSizeEventHandler(CamWnd::onGLResize), NULL, this);
+	_wxGLWidget->Connect(wxEVT_MOUSEWHEEL, wxMouseEventHandler(CamWnd::onMouseScroll), NULL, this);
 
-    _camGLWidget->signal_size_allocate().connect(
-        sigc::mem_fun(*this, &CamWnd::onSizeAllocate)
-    );
-    _camGLWidget->signal_expose_event().connect(
-        sigc::mem_fun(*this, &CamWnd::onExpose)
-    );
-
-    // Pack GL widget into outer widget
-    Gtk::Container* glWidgetFrame = gladeWidget<Gtk::Container>(
-        "glWidgetFrame"
-    );
-    glWidgetFrame->add(*_camGLWidget);
+	_mainWxWidget->GetSizer()->Add(_wxGLWidget, 1, wxEXPAND); 
 }
 
 CamWnd::~CamWnd()
 {
+    // Stop the timer, it might still fire even during shutdown
+    _timer.Stop();
+
     // Unsubscribe from the global scene graph update
     GlobalSceneGraph().removeSceneObserver(this);
 
-    m_window_observer->removeObservedWidget(_camGLWidget);
-
-    // Disconnect self from EventManager
-    GlobalEventManager().disconnect(_camGLWidget);
-
-    if (m_bFreeMove) {
+    if (_freeMoveEnabled) {
         disableFreeMove();
     }
 
     removeHandlersMove();
 
-    /*g_signal_handler_disconnect(G_OBJECT(glWidget), m_sizeHandler);
-    g_signal_handler_disconnect(G_OBJECT(glWidget), m_exposeHandler);*/
-
-    m_window_observer->release();
-
     // Notify the camera manager about our destruction
     GlobalCamera().removeCamWnd(_id);
 }
 
+SelectionTestPtr CamWnd::createSelectionTestForPoint(const Vector2& point)
+{
+    float selectEpsilon = registry::getValue<float>(RKEY_SELECT_EPSILON);
+
+    // Get the mouse position
+    DeviceVector deviceEpsilon(selectEpsilon / getCamera().width, selectEpsilon / getCamera().height);
+
+    // Copy the current view and constrain it to a small rectangle
+    render::View scissored(_view);
+    ConstructSelectionTest(scissored, selection::Rectangle::ConstructFromPoint(point, deviceEpsilon));
+
+    return SelectionTestPtr(new SelectionVolume(scissored));
+}
+
+const VolumeTest& CamWnd::getVolumeTest() const
+{
+    return _view;
+}
+
+int CamWnd::getDeviceWidth() const
+{
+    return _camera.width;
+}
+
+int CamWnd::getDeviceHeight() const
+{
+    return _camera.height;
+}
+
 void CamWnd::startRenderTime()
 {
-    if (_timer.isEnabled())
+	if (_timer.IsRunning())
     {
         // Timer is already running, just reset the preview time
         GlobalRenderSystem().setTime(0);
@@ -325,63 +368,81 @@ void CamWnd::startRenderTime()
     else
     {
         // Timer is not enabled, we're paused or stopped
-        _timer.enable();
+		_timer.Start(MSEC_PER_FRAME);
+        _timerLock = false; // reset the lock, just in case
     }
 
-    //gladeWidget<Gtk::ToolButton>("startTimeButton")->set_sensitive(false);
-    gladeWidget<Gtk::ToolButton>("stopTimeButton")->set_sensitive(true);
+	wxToolBar* miscToolbar = static_cast<wxToolBar*>(_mainWxWidget->FindWindow("MiscToolbar"));
+
+	const wxToolBarToolBase* stopTimeButton = getToolBarToolByLabel(miscToolbar, "stopTimeButton");
+	miscToolbar->EnableTool(stopTimeButton->GetId(), true);
 }
 
-gboolean CamWnd::_onFrame(gpointer data)
+void CamWnd::onStartTimeButtonClick(wxCommandEvent& ev)
 {
-    CamWnd* self = reinterpret_cast<CamWnd*>(data);
+	startRenderTime();
+}
 
-    if (!self->m_drawing)
+void CamWnd::onStopTimeButtonClick(wxCommandEvent& ev)
+{
+	stopRenderTime();
+}
+
+void CamWnd::onFrame(wxTimerEvent& ev)
+{
+    // Calling wxTheApp->Yield() might cause another timer callback if enough 
+    // time has passed during rendering. Calling Yield() within Yield() 
+    // might in the end cause stack overflows and is caught by wxWidgets.
+    if (!_timerLock)
     {
-        GlobalRenderSystem().setTime(GlobalRenderSystem().getTime() + MSEC_PER_FRAME);
+        util::ScopedBoolLock lock(_timerLock);
 
-        // Give the UI a chance to react, but don't hang in there forever
-        std::size_t maxEventsPerCallback = 5;
+        GlobalRenderSystem().setTime(GlobalRenderSystem().getTime() + _timer.GetInterval());
 
-        while (Gtk::Main::events_pending() && --maxEventsPerCallback != 0)
-        {
-            Gtk::Main::iteration();
-        }
-        
-        self->_camGLWidget->queue_draw();
+        // Mouse movement is handled via idle callbacks, so let's give the app a chance to react
+        wxTheApp->ProcessIdle();
+
+		_wxGLWidget->Refresh();
     }
-
-    // Return true, so that the timer gets called again
-    return TRUE;
 }
 
 void CamWnd::stopRenderTime()
 {
-    _timer.disable();
+    _timer.Stop();
 
-    gladeWidget<Gtk::ToolButton>("startTimeButton")->set_sensitive(true);
-    gladeWidget<Gtk::ToolButton>("stopTimeButton")->set_sensitive(false);
+	wxToolBar* miscToolbar = static_cast<wxToolBar*>(_mainWxWidget->FindWindow("MiscToolbar"));
+
+	const wxToolBarToolBase* startTimeButton = getToolBarToolByLabel(miscToolbar, "startTimeButton");
+	const wxToolBarToolBase* stopTimeButton = getToolBarToolByLabel(miscToolbar, "stopTimeButton");
+
+	miscToolbar->EnableTool(startTimeButton->GetId(), true);
+	miscToolbar->EnableTool(stopTimeButton->GetId(), false);
 }
 
-void CamWnd::onRenderModeButtonsChanged()
+void CamWnd::onRenderModeButtonsChanged(wxCommandEvent& ev)
 {
-    using Gtk::ToggleToolButton;
+	if (ev.GetInt() == 0) // un-toggled
+	{
+		return; // Don't react on UnToggle events
+	}
 
-    // This function will be called twice, once for the inactivating button and
+	wxToolBar* camToolbar = static_cast<wxToolBar*>(_mainWxWidget->FindWindow("CamToolbar"));
+
+	// This function will be called twice, once for the inactivating button and
     // once for the activating button
-    if (gladeWidget<ToggleToolButton>("texturedBtn")->get_active())
+	if (getToolBarToolByLabel(camToolbar, "texturedBtn")->GetId() == ev.GetId())
     {
         getCameraSettings()->setRenderMode(RENDER_MODE_TEXTURED);
     }
-    else if (gladeWidget<ToggleToolButton>("wireframeBtn")->get_active())
+    else if (getToolBarToolByLabel(camToolbar, "wireframeBtn")->GetId() == ev.GetId())
     {
         getCameraSettings()->setRenderMode(RENDER_MODE_WIREFRAME);
     }
-    else if (gladeWidget<ToggleToolButton>("flatShadeBtn")->get_active())
+    else if (getToolBarToolByLabel(camToolbar, "flatShadeBtn")->GetId() == ev.GetId())
     {
         getCameraSettings()->setRenderMode(RENDER_MODE_SOLID);
     }
-    else if (gladeWidget<ToggleToolButton>("lightingBtn")->get_active())
+    else if (getToolBarToolByLabel(camToolbar, "lightingBtn")->GetId() == ev.GetId())
     {
         getCameraSettings()->setRenderMode(RENDER_MODE_LIGHTING);
     }
@@ -389,26 +450,29 @@ void CamWnd::onRenderModeButtonsChanged()
 
 void CamWnd::updateActiveRenderModeButton()
 {
+	wxToolBar* camToolbar = static_cast<wxToolBar*>(_mainWxWidget->FindWindow("CamToolbar"));
+
     switch (getCameraSettings()->getRenderMode())
     {
     case RENDER_MODE_WIREFRAME:
-        gladeWidget<Gtk::ToggleToolButton>("wireframeBtn")->set_active(true);
+		camToolbar->ToggleTool(getToolBarToolByLabel(camToolbar, "wireframeBtn")->GetId(), true);
         break;
     case RENDER_MODE_SOLID:
-        gladeWidget<Gtk::ToggleToolButton>("flatShadeBtn")->set_active(true);
+		camToolbar->ToggleTool(getToolBarToolByLabel(camToolbar, "flatShadeBtn")->GetId(), true);
         break;
     case RENDER_MODE_TEXTURED:
-        gladeWidget<Gtk::ToggleToolButton>("texturedBtn")->set_active(true);
+		camToolbar->ToggleTool(getToolBarToolByLabel(camToolbar, "texturedBtn")->GetId(), true);
         break;
     case RENDER_MODE_LIGHTING:
-        gladeWidget<Gtk::ToggleToolButton>("lightingBtn")->set_active(true);
+		camToolbar->ToggleTool(getToolBarToolByLabel(camToolbar, "lightingBtn")->GetId(), true);
         break;
     default:
-        g_assert(false);
+        assert(false);
     }
 }
 
-int CamWnd::getId() {
+int CamWnd::getId()
+{
     return _id;
 }
 
@@ -426,20 +490,8 @@ void CamWnd::jumpToObject(SelectionTest& selectionTest) {
     }
 }
 
-void CamWnd::updateSelectionBox(const Rectangle& area)
-{
-    if (_camGLWidget->is_visible())
-    {
-        // Get the rectangle and convert it to screen coordinates
-        _dragRectangle = area;
-        _dragRectangle.toScreenCoords(m_Camera.width, m_Camera.height);
-
-        queueDraw();
-    }
-}
-
 void CamWnd::changeFloor(const bool up) {
-    float current = m_Camera.getOrigin()[2] - 48;
+    float current = _camera.getOrigin()[2] - 48;
     float bestUp;
     float bestDown;
     FloorHeightWalker walker(current, bestUp, bestDown);
@@ -453,93 +505,68 @@ void CamWnd::changeFloor(const bool up) {
         current = bestDown;
     }
 
-    const Vector3& org = m_Camera.getOrigin();
-    m_Camera.setOrigin(Vector3(org[0], org[1], current + 48));
+    const Vector3& org = _camera.getOrigin();
+    _camera.setOrigin(Vector3(org[0], org[1], current + 48));
 
-    m_Camera.updateModelview();
+    _camera.updateModelview();
     update();
     GlobalCamera().movedNotify();
 }
 
 void CamWnd::enableFreeMove()
 {
-    ASSERT_MESSAGE(!m_bFreeMove, "EnableFreeMove: free-move was already enabled");
-    m_bFreeMove = true;
-    m_Camera.clearMovementFlags(MOVE_ALL);
+    ASSERT_MESSAGE(!_freeMoveEnabled, "EnableFreeMove: free-move was already enabled");
+    _freeMoveEnabled = true;
+    _camera.clearMovementFlags(MOVE_ALL);
 
     removeHandlersMove();
 
-    m_selection_button_press_handler = _camGLWidget->signal_button_press_event().connect(
-        sigc::bind(sigc::mem_fun(*this, &CamWnd::selectionButtonPressFreemove), m_window_observer));
-
-    m_selection_button_release_handler = _camGLWidget->signal_button_release_event().connect(
-        sigc::bind(sigc::mem_fun(*this, &CamWnd::selectionButtonReleaseFreemove), m_window_observer));
-
-    m_selection_motion_handler = _camGLWidget->signal_motion_notify_event().connect(
-        sigc::bind(sigc::mem_fun(*this,& CamWnd::selectionMotionFreemove), m_window_observer));
-
-    if (getCameraSettings()->toggleFreelook())
-    {
-        m_freelook_button_press_handler = _camGLWidget->signal_button_press_event().connect(
-            sigc::mem_fun(*this, &CamWnd::disableFreelookButtonPress));
-    }
-    else
-    {
-        m_freelook_button_release_handler = _camGLWidget->signal_button_release_event().connect(
-            sigc::mem_fun(*this, &CamWnd::disableFreelookButtonRelease));
-    }
-
     enableFreeMoveEvents();
 
-    // greebo: For entering free move, we need a valid parent window
-    assert(_parentWindow);
-
-    _parentWindow->set_focus(*_camGLWidget);
-
-    m_freemove_handle_focusout = _camGLWidget->signal_focus_out_event().connect(sigc::mem_fun(*this, &CamWnd::freeMoveFocusOut));
-    _freezePointer.freeze(_parentWindow, sigc::mem_fun(*this, &CamWnd::_onFreelookMotion));
-
+    _freezePointer.startCapture(_wxGLWidget,
+        [&](int x, int y, int mouseState) { handleGLMouseMoveFreeMoveDelta(x, y, mouseState); },
+        [&]() { disableFreeMove(); }); // Disable free look mode when focus is lost
+	
     update();
 }
 
 void CamWnd::disableFreeMove()
 {
-    ASSERT_MESSAGE(m_bFreeMove, "DisableFreeMove: free-move was not enabled");
-    m_bFreeMove = false;
-    m_Camera.clearMovementFlags(MOVE_ALL);
+    ASSERT_MESSAGE(_freeMoveEnabled, "DisableFreeMove: free-move was not enabled");
+    _freeMoveEnabled = false;
+    _camera.clearMovementFlags(MOVE_ALL);
 
     disableFreeMoveEvents();
 
-    m_selection_button_press_handler.disconnect();
-    m_selection_button_release_handler.disconnect();
-    m_selection_motion_handler.disconnect();
-
-    if (getCameraSettings()->toggleFreelook())
-    {
-        m_freelook_button_press_handler.disconnect();
-    }
-    else
-    {
-        m_freelook_button_release_handler.disconnect();
-    }
+    _freezePointer.endCapture();
 
     addHandlersMove();
-
-    assert(_parentWindow);
-    _freezePointer.unfreeze(_parentWindow);
-
-    m_freemove_handle_focusout.disconnect();
 
     update();
 }
 
-bool CamWnd::freeMoveEnabled() const {
-    return m_bFreeMove;
+bool CamWnd::freeMoveEnabled() const
+{
+    return _freeMoveEnabled;
 }
 
 void CamWnd::Cam_Draw()
 {
-    glViewport(0, 0, m_Camera.width, m_Camera.height);
+	wxSize glSize = _wxGLWidget->GetSize();
+
+	if (_camera.width != glSize.GetWidth() || _camera.height != glSize.GetHeight())
+	{
+		_camera.width = glSize.GetWidth();
+		_camera.height = glSize.GetHeight();
+		_camera.updateProjection();
+	}
+
+	if (_camera.height == 0 || _camera.width == 0)
+	{
+		return; // otherwise we'll receive OpenGL errors in ortho rendering below
+	}
+
+    glViewport(0, 0, _camera.width, _camera.height);
 
     // enable depth buffer writes
     glDepthMask(GL_TRUE);
@@ -555,18 +582,17 @@ void CamWnd::Cam_Draw()
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    render::RenderStatistics::Instance().resetStats();
+	render::RenderStatistics::Instance().resetStats();
 
 	render::View::resetCullStats();
 
     glMatrixMode(GL_PROJECTION);
 
-    glLoadMatrixd(m_Camera.projection);
+    glLoadMatrixd(_camera.projection);
 
     glMatrixMode(GL_MODELVIEW);
 
-    glLoadMatrixd(m_Camera.modelview);
-
+    glLoadMatrixd(_camera.modelview);
 
     // one directional light source directly behind the viewer
     {
@@ -579,9 +605,9 @@ void CamWnd::Cam_Draw()
         //material[0] = material[1] = material[2] = 0.8f;
         //material[3] = 1.0f;
 
-        inverse_cam_dir[0] = m_Camera.vpn[0];
-        inverse_cam_dir[1] = m_Camera.vpn[1];
-        inverse_cam_dir[2] = m_Camera.vpn[2];
+        inverse_cam_dir[0] = _camera.vpn[0];
+        inverse_cam_dir[1] = _camera.vpn[1];
+        inverse_cam_dir[2] = _camera.vpn[2];
         inverse_cam_dir[3] = 0;
 
         glLightfv(GL_LIGHT0, GL_POSITION, inverse_cam_dir);
@@ -646,18 +672,19 @@ void CamWnd::Cam_Draw()
             break;
     }
 
-    if (!getCameraSettings()->solidSelectionBoxes())
+	if (!getCameraSettings()->solidSelectionBoxes())
     {
         allowedRenderFlags |= RENDER_LINESTIPPLE
                             | RENDER_POLYGONSTIPPLE;
     }
 
     {
-        CamRenderer renderer(allowedRenderFlags, m_state_select2, m_state_select1, m_view.getViewer());
+        CamRenderer renderer(allowedRenderFlags, _primitiveHighlightShader,
+                             _faceHighlightShader, _view.getViewer());
 
-		render::RenderHighlighted::collectRenderablesInScene(renderer, m_view);
+		render::RenderableCollectionWalker::collectRenderablesInScene(renderer, _view);
 
-        renderer.render(m_Camera.modelview, m_Camera.projection);
+        renderer.render(_camera.modelview, _camera.projection);
     }
 
     // greebo: Draw the clipper's points (skipping the depth-test)
@@ -681,10 +708,10 @@ void CamWnd::Cam_Draw()
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(0, (float)m_Camera.width, 0, (float)m_Camera.height, -100, 100);
+    glOrtho(0, (float)_camera.width, 0, (float)_camera.height, -100, 100);
 
     glScalef(1, -1, 1);
-    glTranslatef(0, -(float)m_Camera.height, 0);
+    glTranslatef(0, -(float)_camera.height, 0);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
@@ -708,77 +735,36 @@ void CamWnd::Cam_Draw()
 
     // draw the crosshair
 
-    if (m_bFreeMove) {
+    if (_freeMoveEnabled) {
         glBegin( GL_LINES );
-        glVertex2f( (float)m_Camera.width / 2.f, (float)m_Camera.height / 2.f + 6 );
-        glVertex2f( (float)m_Camera.width / 2.f, (float)m_Camera.height / 2.f + 2 );
-        glVertex2f( (float)m_Camera.width / 2.f, (float)m_Camera.height / 2.f - 6 );
-        glVertex2f( (float)m_Camera.width / 2.f, (float)m_Camera.height / 2.f - 2 );
-        glVertex2f( (float)m_Camera.width / 2.f + 6, (float)m_Camera.height / 2.f );
-        glVertex2f( (float)m_Camera.width / 2.f + 2, (float)m_Camera.height / 2.f );
-        glVertex2f( (float)m_Camera.width / 2.f - 6, (float)m_Camera.height / 2.f );
-        glVertex2f( (float)m_Camera.width / 2.f - 2, (float)m_Camera.height / 2.f );
+        glVertex2f( (float)_camera.width / 2.f, (float)_camera.height / 2.f + 6 );
+        glVertex2f( (float)_camera.width / 2.f, (float)_camera.height / 2.f + 2 );
+        glVertex2f( (float)_camera.width / 2.f, (float)_camera.height / 2.f - 6 );
+        glVertex2f( (float)_camera.width / 2.f, (float)_camera.height / 2.f - 2 );
+        glVertex2f( (float)_camera.width / 2.f + 6, (float)_camera.height / 2.f );
+        glVertex2f( (float)_camera.width / 2.f + 2, (float)_camera.height / 2.f );
+        glVertex2f( (float)_camera.width / 2.f - 6, (float)_camera.height / 2.f );
+        glVertex2f( (float)_camera.width / 2.f - 2, (float)_camera.height / 2.f );
         glEnd();
     }
 
-    glRasterPos3f(1.0f, static_cast<float>(m_Camera.height) - 1.0f, 0.0f);
+    glRasterPos3f(1.0f, static_cast<float>(_camera.height) - 1.0f, 0.0f);
 
     GlobalOpenGL().drawString(render::RenderStatistics::Instance().getStatString());
 
-    glRasterPos3f(1.0f, static_cast<float>(m_Camera.height) - 11.0f, 0.0f);
+    glRasterPos3f(1.0f, static_cast<float>(_camera.height) - 11.0f, 0.0f);
 
 	GlobalOpenGL().drawString(render::View::getCullStats());
 
     drawTime();
 
-    // Draw the selection drag rectangle
-    if (!_dragRectangle.empty())
+    if (_activeMouseTool)
     {
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        glOrtho(0, (float)m_Camera.width, 0, (float)m_Camera.height, -100, 100);
+        glOrtho(0, (float)_camera.width, 0, (float)_camera.height, -100, 100);
 
-        glScalef(1, -1, 1);
-        glTranslatef(0, -(float)m_Camera.height, 0);
-
-        // Define the blend function for transparency
-        glEnable(GL_BLEND);
-        glBlendColor(0, 0, 0, 0.2f);
-        glBlendFunc(GL_CONSTANT_ALPHA_EXT, GL_ONE_MINUS_CONSTANT_ALPHA_EXT);
-
-        Vector3 dragBoxColour = ColourSchemes().getColour("drag_selection");
-        glColor3dv(dragBoxColour);
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-        // Correct the glScale and glTranslate calls above
-        Rectangle rect = _dragRectangle;
-
-        double width = rect.max.x() - rect.min.x();
-        double height = rect.max.y() - rect.min.y();
-
-        rect.min.y() = m_Camera.height - rect.min.y();
-        height *= -1;
-
-        // The transparent fill rectangle
-        glBegin(GL_QUADS);
-        glVertex2d(rect.min.x(), rect.min.y() + height);
-        glVertex2d(rect.min.x() + width, rect.min.y() + height);
-        glVertex2d(rect.min.x() + width, rect.min.y());
-        glVertex2d(rect.min.x(), rect.min.y());
-        glEnd();
-
-        // The solid borders
-        glColor3f(0.9f, 0.9f, 0.9f);
-        glBlendColor(0, 0, 0, 0.8f);
-
-        glBegin(GL_LINE_LOOP);
-        glVertex2d(rect.min.x(), rect.min.y() + height);
-        glVertex2d(rect.min.x() + width, rect.min.y() + height);
-        glVertex2d(rect.min.x() + width, rect.min.y());
-        glVertex2d(rect.min.x(), rect.min.y());
-        glEnd();
-
-        glDisable(GL_BLEND);
+        _activeMouseTool->renderOverlay();
     }
 
     // bind back to the default texture so that we don't have problems
@@ -786,28 +772,38 @@ void CamWnd::Cam_Draw()
     glBindTexture( GL_TEXTURE_2D, 0 );
 }
 
-void CamWnd::draw()
+void CamWnd::onRender()
 {
-    if (m_drawing) return;
-
-    m_drawing = true;
-
-    // Scoped object handling the GL context switching
-    gtkutil::GLWidgetSentry sentry(*_camGLWidget);
-
-    if (GlobalMap().isValid() && GlobalMainFrame().screenUpdatesEnabled()) {
-        GlobalOpenGL().assertNoErrors();
-        Cam_Draw();
-        GlobalOpenGL().assertNoErrors();
-    }
-
-    m_drawing = false;
+	draw();
 }
 
-void CamWnd::benchmark() {
+void CamWnd::performDeferredDraw()
+{
+	_wxGLWidget->Refresh(false);
+}
+
+void CamWnd::draw()
+{
+    if (_drawing) return;
+
+    util::ScopedBoolLock lock(_drawing);
+
+    if (GlobalMap().isValid() && GlobalMainFrame().screenUpdatesEnabled())
+	{
+        GlobalOpenGL().assertNoErrors();
+
+        Cam_Draw();
+
+        GlobalOpenGL().assertNoErrors();
+    }
+}
+
+void CamWnd::benchmark()
+{
     double dStart = clock() / 1000.0;
 
-    for (int i=0 ; i < 100 ; i++) {
+    for (int i=0 ; i < 100 ; i++)
+	{
         Vector3 angles;
         angles[CAMERA_ROLL] = 0;
         angles[CAMERA_PITCH] = 0;
@@ -820,7 +816,8 @@ void CamWnd::benchmark() {
     rMessage() << (boost::format("%5.2lf") % (dEnd - dStart)) << " seconds\n";
 }
 
-void CamWnd::onSceneGraphChange() {
+void CamWnd::onSceneGraphChange()
+{
     // Just pass the call to the update method
     update();
 }
@@ -877,16 +874,7 @@ void CamWnd::disableDiscreteMoveEvents()
 
 void CamWnd::addHandlersMove()
 {
-    m_selection_button_press_handler = _camGLWidget->signal_button_press_event().connect(
-        sigc::bind(sigc::mem_fun(*this, &CamWnd::selectionButtonPress), m_window_observer));
-
-    m_selection_button_release_handler = _camGLWidget->signal_button_release_event().connect(
-        sigc::bind(sigc::mem_fun(*this, &CamWnd::selectionButtonRelease), m_window_observer));
-
-    m_selection_motion_handler = _camGLWidget->signal_motion_notify_event().connect(sigc::mem_fun(m_deferred_motion, &gtkutil::DeferredMotion::onMouseMotion));
-
-    m_freelook_button_press_handler = _camGLWidget->signal_button_press_event().connect(
-        sigc::mem_fun(*this, &CamWnd::enableFreelookButtonPress));
+	_wxGLWidget->Connect(wxEVT_MOTION, wxMouseEventHandler(CamWnd::onGLMouseMove), NULL, this);
 
     // Enable either the free-look movement commands or the discrete ones,
     // depending on the selection
@@ -902,10 +890,7 @@ void CamWnd::addHandlersMove()
 
 void CamWnd::removeHandlersMove()
 {
-    m_selection_button_press_handler.disconnect();
-    m_selection_button_release_handler.disconnect();
-    m_selection_motion_handler.disconnect();
-    m_freelook_button_press_handler.disconnect();
+    _wxGLWidget->Disconnect(wxEVT_MOTION, wxMouseEventHandler(CamWnd::onGLMouseMove), NULL, this);
 
     // Disable either the free-look movement commands or the discrete ones, depending on the selection
     if (getCameraSettings()->discreteMovement())
@@ -923,90 +908,72 @@ void CamWnd::update()
     queueDraw();
 }
 
-Camera& CamWnd::getCamera() {
-    return m_Camera;
+Camera& CamWnd::getCamera()
+{
+    return _camera;
 }
 
-void CamWnd::captureStates() {
-    m_state_select1 = GlobalRenderSystem().capture("$CAM_HIGHLIGHT");
-    m_state_select2 = GlobalRenderSystem().capture("$CAM_OVERLAY");
+void CamWnd::captureStates()
+{
+    _faceHighlightShader = GlobalRenderSystem().capture("$CAM_HIGHLIGHT");
+    _primitiveHighlightShader = GlobalRenderSystem().capture("$CAM_OVERLAY");
 }
 
 void CamWnd::releaseStates() {
-    m_state_select1 = ShaderPtr();
-    m_state_select2 = ShaderPtr();
+    _faceHighlightShader = ShaderPtr();
+    _primitiveHighlightShader = ShaderPtr();
 }
 
-void CamWnd::queueDraw() {
-    if (m_drawing) {
+void CamWnd::queueDraw()
+{
+    if (_drawing)
+	{
         return;
     }
 
-    m_deferredDraw.draw();
+    _deferredDraw.draw();
 }
 
-Gtk::Widget* CamWnd::getWidget() const
+Vector3 CamWnd::getCameraOrigin() const
 {
-    return _mainWidget;
+    return _camera.getOrigin();
 }
 
-const Glib::RefPtr<Gtk::Window>& CamWnd::getParent() const
+void CamWnd::setCameraOrigin(const Vector3& origin)
 {
-    return _parentWindow;
+    _camera.setOrigin(origin);
 }
 
-void CamWnd::setContainer(const Glib::RefPtr<Gtk::Window>& newParent)
+Vector3 CamWnd::getCameraAngles() const
 {
-    if (newParent == _parentWindow)
-    {
-        // Do nothing if no change required
-        return;
-    }
-
-    if (_parentWindow)
-    {
-        // Parent change, disconnect first
-        m_window_observer->removeObservedWidget(_parentWindow);
-        GlobalEventManager().disconnect(_parentWindow->get_toplevel());
-
-        if (m_bFreeMove)
-        {
-            disableFreeMove();
-        }
-
-        _parentWindow.reset();
-    }
-
-    if (newParent)
-    {
-        _parentWindow = newParent;
-
-        m_window_observer->addObservedWidget(_parentWindow);
-        GlobalEventManager().connect(_parentWindow->get_toplevel());
-    }
+    return _camera.getAngles();
 }
 
-Vector3 CamWnd::getCameraOrigin() const {
-    return m_Camera.getOrigin();
+void CamWnd::setCameraAngles(const Vector3& angles)
+{
+    _camera.setAngles(angles);
 }
 
-void CamWnd::setCameraOrigin(const Vector3& origin) {
-    m_Camera.setOrigin(origin);
+const Frustum& CamWnd::getViewFrustum() const
+{
+    return _view.getFrustum();
 }
 
-Vector3 CamWnd::getCameraAngles() const {
-    return m_Camera.getAngles();
+void CamWnd::onFarClipPlaneOutClick(wxCommandEvent& ev) 
+{
+    farClipPlaneOut();
 }
 
-void CamWnd::setCameraAngles(const Vector3& angles) {
-    m_Camera.setAngles(angles);
+void CamWnd::onFarClipPlaneInClick(wxCommandEvent& ev) 
+{
+    farClipPlaneIn();
 }
 
 void CamWnd::farClipPlaneOut() 
 {
     getCameraSettings()->setCubicScale( getCameraSettings()->cubicScale() + 1 );
 
-    m_Camera.updateProjection();
+    _camera.updateProjection();
     update();
 }
 
@@ -1014,167 +981,212 @@ void CamWnd::farClipPlaneIn()
 {
     getCameraSettings()->setCubicScale( getCameraSettings()->cubicScale() - 1 );
 
-    m_Camera.updateProjection();
+    _camera.updateProjection();
     update();
 }
 
-void CamWnd::onSizeAllocate(Gtk::Allocation& allocation)
+void CamWnd::onGLResize(wxSizeEvent& ev)
 {
-    getCamera().width = allocation.get_width();
-    getCamera().height = allocation.get_height();
+	getCamera().width = ev.GetSize().GetWidth();
+	getCamera().height = ev.GetSize().GetHeight();
     getCamera().updateProjection();
 
-    m_window_observer->onSizeChanged(getCamera().width, getCamera().height);
-
     queueDraw();
+
+	ev.Skip();
 }
 
-bool CamWnd::onExpose(GdkEventExpose* ev)
+void CamWnd::onMouseScroll(wxMouseEvent& ev)
 {
-    draw();
+	float movementSpeed = static_cast<float>(getCameraSettings()->movementSpeed());
 
-    return false;
-}
-
-bool CamWnd::onMouseScroll(GdkEventScroll* ev)
-{
-    // Set the GTK focus to this widget
-    _camGLWidget->grab_focus();
+	if (ev.ShiftDown())
+	{
+		movementSpeed *= 2;
+	}
+	else if (ev.AltDown())
+	{
+		movementSpeed *= 0.1f;
+	}
 
     // Determine the direction we are moving.
-    if (ev->direction == GDK_SCROLL_UP)
+	if (ev.GetWheelRotation() > 0)
     {
         getCamera().freemoveUpdateAxes();
-        setCameraOrigin(getCameraOrigin() + getCamera().forward * static_cast<float>(getCameraSettings()->movementSpeed()));
+		setCameraOrigin(getCameraOrigin() + getCamera().forward * movementSpeed);
     }
-    else if (ev->direction == GDK_SCROLL_DOWN)
+    else if (ev.GetWheelRotation() < 0)
     {
         getCamera().freemoveUpdateAxes();
-        setCameraOrigin(getCameraOrigin() + getCamera().forward * (-static_cast<float>(getCameraSettings()->movementSpeed())));
+		setCameraOrigin(getCameraOrigin() + getCamera().forward * -movementSpeed);
     }
-
-    return false;
 }
 
-bool CamWnd::enableFreelookButtonPress(GdkEventButton* ev)
+ui::CameraMouseToolEvent CamWnd::createMouseEvent(const Vector2& point, const Vector2& delta)
 {
-    if (ev->type == GDK_BUTTON_PRESS)
+    // When freeMove is enabled, snap the mouse coordinates to the center of the view widget
+    Vector2 actualPoint = freeMoveEnabled() ? windowvector_for_widget_centre(*_wxGLWidget) : point;
+
+    Vector2 normalisedDeviceCoords = device_constrained(
+        window_to_normalised_device(actualPoint, _camera.width, _camera.height));
+
+    return ui::CameraMouseToolEvent(*this, normalisedDeviceCoords, delta);
+}
+
+void CamWnd::handleGLCapturedMouseMove(int x, int y, unsigned int mouseState)
+{
+    if (!_activeMouseTool) return;
+
+    bool mouseToolReceivesDeltas = (_activeMouseTool->getPointerMode() & ui::MouseTool::PointerMode::MotionDeltas) != 0;
+
+    // New MouseTool event, passing the delta only
+    ui::CameraMouseToolEvent ev = mouseToolReceivesDeltas ?
+        createMouseEvent(Vector2(0, 0), Vector2(x, y)) :
+        createMouseEvent(Vector2(x, y));
+
+    if (_activeMouseTool->onMouseMove(ev) == ui::MouseTool::Result::Finished)
     {
-        if (GlobalEventManager().MouseEvents().stateMatchesCameraViewEvent(ui::camEnableFreeLookMode, ev))
+        clearActiveMouseTool();
+    }
+}
+
+void CamWnd::onGLMouseButtonPress(wxMouseEvent& ev)
+{
+	// The focus might be on some editable child window - since the
+	// GL widget cannot be focused itself, let's reset the focus on the toplevel window
+	// which will propagate any key events accordingly.
+	GlobalMainFrame().getWxTopLevelWindow()->SetFocus();
+
+    // Run the regular routine handling the mousetool interaction
+    ui::MouseToolStack toolStack = GlobalCamera().getMouseToolsForEvent(ev);
+
+    // Construct the mousedown event and see if the tool is able to handle it
+    ui::CameraMouseToolEvent mouseEvent = createMouseEvent(Vector2(ev.GetX(), ev.GetY()));
+
+    _activeMouseTool = toolStack.handleMouseDownEvent(mouseEvent);
+
+    if (!_activeMouseTool)
+    {
+        return;
+    }
+
+    unsigned int pointerMode = _activeMouseTool->getPointerMode();
+
+    // Check if the mousetool requires pointer freeze, only do this if we're not already capturing
+    if ((pointerMode & ui::MouseTool::PointerMode::Capture) != 0 && !_freezePointer.isCapturing(_wxGLWidget))
+    {
+        _freezePointer.startCapture(_wxGLWidget,
+            [&](int x, int y, int mouseState) { handleGLCapturedMouseMove(x, y, mouseState); },   // Motion Functor
+            [&]() { clearActiveMouseTool(); }, // End move function, also called when the capture is lost.
+            (pointerMode & ui::MouseTool::PointerMode::Freeze) != 0,
+            (pointerMode & ui::MouseTool::PointerMode::Hidden) != 0,
+            (pointerMode & ui::MouseTool::PointerMode::MotionDeltas) != 0
+        );
+    }
+
+    // Register a hook to capture the ESC key during the active phase
+    _escapeListener.reset(new wxutil::KeyEventFilter(WXK_ESCAPE, [&]()
+    {
+        _activeMouseTool->onCancel();
+
+        // This also removes the active escape listener
+        clearActiveMouseTool();
+    }));
+}
+
+void CamWnd::onGLMouseButtonRelease(wxMouseEvent& ev)
+{
+    if (!_activeMouseTool) return;
+
+    // Construct the mousedown event and see which tool is able to handle it
+    ui::CameraMouseToolEvent mouseEvent = createMouseEvent(Vector2(ev.GetX(), ev.GetY()));
+
+    // Ask the active mousetool to handle this event
+    ui::MouseTool::Result result = _activeMouseTool->onMouseUp(mouseEvent);
+
+    if (result == ui::MouseTool::Result::Finished)
+    {
+        clearActiveMouseTool();
+    }
+}
+
+void CamWnd::onGLMouseMove(wxMouseEvent& ev)
+{
+    handleGLMouseMove(ev.GetX(), ev.GetY(), wxutil::MouseButton::GetStateForMouseEvent(ev));
+}
+
+void CamWnd::handleGLMouseMove(int x, int y, unsigned int state)
+{
+    // Construct the mousedown event and see which tool is able to handle it
+    ui::CameraMouseToolEvent mouseEvent = createMouseEvent(Vector2(x, y));
+
+    if (_activeMouseTool)
+    {
+        // Ask the active mousetool to handle this event
+        switch (_activeMouseTool->onMouseMove(mouseEvent))
         {
-            enableFreeMove();
-            return true;
-        }
+        case ui::MouseTool::Result::Finished:
+            // Tool is done
+            clearActiveMouseTool();
+            return;
+
+        case ui::MouseTool::Result::Activated:
+        case ui::MouseTool::Result::Continued:
+            return;
+
+        case ui::MouseTool::Result::Ignored:
+            break;
+        };
     }
 
-    return false;
-}
-
-bool CamWnd::disableFreelookButtonPress(GdkEventButton* ev)
-{
-    if (ev->type == GDK_BUTTON_PRESS)
+    // Send mouse move events to all tools that want them
+    GlobalCamera().foreachMouseTool([&](const ui::MouseToolPtr& tool)
     {
-        if (GlobalEventManager().MouseEvents().stateMatchesCameraViewEvent(ui::camDisableFreeLookMode, ev))
+        // The active tool already received that event above
+        if (tool != _activeMouseTool && tool->alwaysReceivesMoveEvents())
         {
-            disableFreeMove();
-            return true;
+            tool->onMouseMove(mouseEvent);
         }
-    }
-
-    return false;
+    });
 }
 
-bool CamWnd::disableFreelookButtonRelease(GdkEventButton* ev)
+void CamWnd::handleGLMouseMoveFreeMoveDelta(int x, int y, unsigned int state)
 {
-    if (ev->type == GDK_BUTTON_RELEASE)
+	_camera.m_mouseMove.onMouseMotionDelta(x, y, state);
+
+    unsigned int strafeFlags = GlobalCamera().getStrafeModifierFlags();
+
+    _camera.m_strafe = (state & strafeFlags) == strafeFlags;
+
+    if (_camera.m_strafe)
     {
-        if (GlobalEventManager().MouseEvents().stateMatchesCameraViewEvent(ui::camDisableFreeLookMode, ev))
-        {
-            disableFreeMove();
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool CamWnd::selectionButtonPress(GdkEventButton* ev, SelectionSystemWindowObserver* observer)
-{
-    // Set the GTK focus to this widget
-    _camGLWidget->grab_focus();
-
-    // Check for the correct event type
-    if (ev->type == GDK_BUTTON_PRESS)
-    {
-        observer->onMouseDown(WindowVector(ev->x, ev->y), ev);
-    }
-
-    return false;
-}
-
-bool CamWnd::selectionButtonRelease(GdkEventButton* ev, SelectionSystemWindowObserver* observer)
-{
-    if (ev->type == GDK_BUTTON_RELEASE)
-    {
-        observer->onMouseUp(WindowVector(ev->x, ev->y), ev);
-    }
-
-    return false;
-}
-
-bool CamWnd::selectionButtonPressFreemove(GdkEventButton* ev, SelectionSystemWindowObserver* observer)
-{
-    // Check for the correct event type
-    if (ev->type == GDK_BUTTON_PRESS)
-    {
-        observer->onMouseDown(windowvector_for_widget_centre(*_camGLWidget), ev);
-    }
-
-    return false;
-}
-
-bool CamWnd::selectionButtonReleaseFreemove(GdkEventButton* ev, SelectionSystemWindowObserver* observer)
-{
-    if (ev->type == GDK_BUTTON_RELEASE)
-    {
-        observer->onMouseUp(windowvector_for_widget_centre(*_camGLWidget), ev);
-    }
-
-    return false;
-}
-
-bool CamWnd::selectionMotionFreemove(GdkEventMotion* ev, SelectionSystemWindowObserver* observer)
-{
-    observer->onMouseMotion(windowvector_for_widget_centre(*_camGLWidget), ev->state);
-
-    return false;
-}
-
-bool CamWnd::freeMoveFocusOut(GdkEventFocus* ev)
-{
-    // Disable free look mode when focus is lost
-    disableFreeMove();
-    return false;
-}
-
-void CamWnd::_onDeferredMouseMotion(gdouble x, gdouble y, guint state)
-{
-    m_window_observer->onMouseMotion(WindowVector(x, y), state);
-}
-
-void CamWnd::_onFreelookMotion(int x, int y, guint state)
-{
-    m_Camera.m_mouseMove.onMouseMotionDelta(x, y, state);
-    m_Camera.m_strafe = GlobalEventManager().MouseEvents().strafeActive(state);
-
-    if (m_Camera.m_strafe)
-    {
-        m_Camera.m_strafe_forward = GlobalEventManager().MouseEvents().strafeForwardActive(state);
+        unsigned int strafeForwardFlags = GlobalCamera().getStrafeForwardModifierFlags();
+        _camera.m_strafe_forward = (state & strafeForwardFlags) == strafeForwardFlags;
     }
     else
     {
-        m_Camera.m_strafe_forward = false;
+        _camera.m_strafe_forward = false;
     }
+}
+
+void CamWnd::clearActiveMouseTool()
+{
+    // Reset the escape listener in any case
+    _escapeListener.reset();
+
+    if (!_activeMouseTool)
+    {
+        return;
+    }
+
+    // Freezing mouse tools: release the mouse cursor again
+    if (_activeMouseTool->getPointerMode() & ui::MouseTool::PointerMode::Capture && !freeMoveEnabled())
+    {
+        _freezePointer.endCapture();
+    }
+
+    // Tool is done
+    _activeMouseTool.reset();
 }
 
 void CamWnd::drawTime()
@@ -1186,10 +1198,10 @@ void CamWnd::drawTime()
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(0, static_cast<float>(m_Camera.width), 0, static_cast<float>(m_Camera.height), -100, 100);
+    glOrtho(0, static_cast<float>(_camera.width), 0, static_cast<float>(_camera.height), -100, 100);
 
     glScalef(1, -1, 1);
-    glTranslatef(static_cast<float>(m_Camera.width) - 90, -static_cast<float>(m_Camera.height), 0);
+    glTranslatef(static_cast<float>(_camera.width) - 90, -static_cast<float>(_camera.height), 0);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
@@ -1212,53 +1224,16 @@ void CamWnd::drawTime()
     glColor3f(1.f, 1.f, 1.f);
     glLineWidth(1);
 
-    glRasterPos3f(1.0f, static_cast<float>(m_Camera.height) - 1.0f, 0.0f);
+    glRasterPos3f(1.0f, static_cast<float>(_camera.height) - 1.0f, 0.0f);
 
     std::size_t time = GlobalRenderSystem().getTime();
     GlobalOpenGL().drawString((boost::format("Time: %.3f sec.") % (time * 0.001f)).str());
 }
 
-void CamWnd::connectWindowStateEvent(Gtk::Window& window)
-{
-    // Connect to the window-state-event signal
-    _windowStateConn = window.signal_window_state_event().connect(
-        sigc::mem_fun(*this, &CamWnd::onWindowStateEvent)
-    );
-}
-
-void CamWnd::disconnectWindowStateEvent()
-{
-    _windowStateConn.disconnect();
-}
-
-bool CamWnd::onWindowStateEvent(GdkEventWindowState* ev)
-{
-    if ((ev->changed_mask & (GDK_WINDOW_STATE_ICONIFIED|GDK_WINDOW_STATE_WITHDRAWN)) != 0)
-    {
-        // Now let's see what the new state of the window is
-        if ((ev->new_window_state & (GDK_WINDOW_STATE_ICONIFIED|GDK_WINDOW_STATE_WITHDRAWN)) == 0)
-        {
-            // Window got maximised again, re-add the GL widget to fix it from going gray
-            Gtk::Widget* glWidget = getWidget();
-
-            // greebo: Unfortunate hack to fix the grey GL renderviews in Win32
-            Gtk::Container* container = glWidget->get_parent();
-
-            if (container != NULL)
-            {
-                glWidget->reference();
-                container->remove(*glWidget);
-                container->add(*glWidget);
-                glWidget->unreference();
-            }
-        }
-    }
-
-    return false;
-}
-
 // -------------------------------------------------------------------------------
 
-ShaderPtr CamWnd::m_state_select1;
-ShaderPtr CamWnd::m_state_select2;
+ShaderPtr CamWnd::_faceHighlightShader;
+ShaderPtr CamWnd::_primitiveHighlightShader;
 int CamWnd::_maxId = 0;
+
+} // namespace

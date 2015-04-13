@@ -8,7 +8,8 @@
 #include "itransformable.h"
 #include "ientity.h"
 
-#include "gtkutil/dialog/MessageBox.h"
+#include "scenelib.h"
+#include "wxutil/dialog/MessageBox.h"
 #include "selectionlib.h"
 #include "gamelib.h"
 #include "xyview/GlobalXYWnd.h"
@@ -183,9 +184,8 @@ void appendCurveControlPoint(const cmd::ArgumentList& args) {
 		);
 	}
 	else {
-		gtkutil::MessageBox::ShowError(
-			_("Can't append curve point - no entities with curve selected."),
-			GlobalMainFrame().getTopLevelWindow()
+		wxutil::Messagebox::ShowError(
+			_("Can't append curve point - no entities with curve selected.")
 		);
 	}
 }
@@ -194,9 +194,8 @@ void removeCurveControlPoints(const cmd::ArgumentList& args) {
 	if (GlobalSelectionSystem().Mode() != SelectionSystem::eComponent ||
 		GlobalSelectionSystem().ComponentMode() != SelectionSystem::eVertex)
 	{
-		gtkutil::MessageBox::ShowError(
-			_("Can't remove curve points - must be in vertex editing mode."),
-			GlobalMainFrame().getTopLevelWindow()
+		wxutil::Messagebox::ShowError(
+			_("Can't remove curve points - must be in vertex editing mode.")
 		);
 		return;
 	}
@@ -215,9 +214,8 @@ void removeCurveControlPoints(const cmd::ArgumentList& args) {
 		);
 	}
 	else {
-		gtkutil::MessageBox::ShowError(
-			_("Can't remove curve points - no entities with curves selected."),
-			GlobalMainFrame().getTopLevelWindow()
+		wxutil::Messagebox::ShowError(
+			_("Can't remove curve points - no entities with curves selected.")
 		);
 	}
 }
@@ -226,9 +224,8 @@ void insertCurveControlPoints(const cmd::ArgumentList& args) {
 	if (GlobalSelectionSystem().Mode() != SelectionSystem::eComponent ||
 		GlobalSelectionSystem().ComponentMode() != SelectionSystem::eVertex)
 	{
-		gtkutil::MessageBox::ShowError(
-			_("Can't insert curve points - must be in vertex editing mode."),
-			GlobalMainFrame().getTopLevelWindow()
+		wxutil::Messagebox::ShowError(
+			_("Can't insert curve points - must be in vertex editing mode.")
 		);
 		return;
 	}
@@ -247,9 +244,8 @@ void insertCurveControlPoints(const cmd::ArgumentList& args) {
 		);
 	}
 	else {
-		gtkutil::MessageBox::ShowError(
-			_("Can't insert curve points - no entities with curves selected."),
-			GlobalMainFrame().getTopLevelWindow()
+		wxutil::Messagebox::ShowError(
+			_("Can't insert curve points - no entities with curves selected.")
 		);
 	}
 }
@@ -269,9 +265,8 @@ void convertCurveTypes(const cmd::ArgumentList& args) {
 		);
 	}
 	else {
-		gtkutil::MessageBox::ShowError(
-			_("Can't convert curves - no entities with curves selected."),
-			GlobalMainFrame().getTopLevelWindow()
+		wxutil::Messagebox::ShowError(
+			_("Can't convert curves - no entities with curves selected.")
 		);
 	}
 }

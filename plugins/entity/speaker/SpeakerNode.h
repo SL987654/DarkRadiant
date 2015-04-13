@@ -18,7 +18,7 @@ namespace entity
 {
 
 class SpeakerNode;
-typedef boost::shared_ptr<SpeakerNode> SpeakerNodePtr;
+typedef std::shared_ptr<SpeakerNode> SpeakerNodePtr;
 
 /// Entity node representing a speaker
 class SpeakerNode :
@@ -58,7 +58,7 @@ class SpeakerNode :
     KeyObserverDelegate _shaderObserver;
 
     // dragplanes for resizing using mousedrag
-    DragPlanes _dragPlanes;
+    selection::DragPlanes _dragPlanes;
 
 private:
     SpeakerNode(const IEntityClassPtr& eclass);
@@ -114,11 +114,11 @@ public:
 protected:
     // Gets called by the Transformable implementation whenever
     // scale, rotation or translation is changed.
-    void _onTransformationChanged();
+    void _onTransformationChanged() override;
 
     // Called by the Transformable implementation before freezing
     // or when reverting transformations.
-    void _applyTransformation();
+    void _applyTransformation() override;
 
     // Called after the constructor is done, overrides EntityNode
     void construct();

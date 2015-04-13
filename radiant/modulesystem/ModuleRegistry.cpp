@@ -9,6 +9,7 @@
 #include "ApplicationContextImpl.h"
 #include "ModuleLoader.h"
 
+#include <wx/app.h>
 #include <boost/format.hpp>
 
 namespace module
@@ -16,15 +17,32 @@ namespace module
 
 ModuleRegistry::ModuleRegistry() :
 	_modulesInitialised(false),
-	_modulesShutdown(false)
+	_modulesShutdown(false),
+    _context(NULL)
 {
 	rMessage() << "ModuleRegistry instantiated." << std::endl;
+}
+
+ModuleRegistry::~ModuleRegistry()
+{
+    // The modules map might be non-empty if the app is failing during very
+    // early startup stages, and unloadModules() might not have been called yet.
+    // Some modules might need to call this instance during their own destruction,
+    // so it's better not to rely on the shared_ptr to destruct them.
+    unloadModules();
 }
 
 void ModuleRegistry::unloadModules()
 {
 	_uninitialisedModules.clear();
 	_initialisedModules.clear();
+
+    // We need to delete all pending objects before unloading modules
+    // wxWidgets needs a chance to delete them before memory access is denied
+    if (wxTheApp != NULL)
+    {
+        wxTheApp->ProcessIdle();
+    }
 
 	Loader::unloadModules();
 }
@@ -100,7 +118,8 @@ void ModuleRegistry::initialiseModuleRecursive(const std::string& name)
 		_progress);
 
 	// Initialise the module itself, now that the dependencies are ready
-	module->initialiseModule(_context);
+    wxASSERT(_context);
+	module->initialiseModule(*_context);
 }
 
 // Initialise all registered modules
@@ -169,17 +188,10 @@ RegisterableModulePtr ModuleRegistry::getModule(const std::string& name) const {
 	return returnValue;
 }
 
-const ApplicationContext& ModuleRegistry::getApplicationContext() const {
-	return _context;
-}
-
-void ModuleRegistry::initialiseContext(int argc, char* argv[]) {
-	_context.initialise(argc, argv);
-}
-
-void ModuleRegistry::initErrorHandler()
+const ApplicationContext& ModuleRegistry::getApplicationContext() const
 {
-	_context.initErrorHandler();
+    wxASSERT(_context);
+	return *_context;
 }
 
 std::string ModuleRegistry::getModuleList(const std::string& separator) {

@@ -1,3 +1,6 @@
-msbuild ..\msvc2012\DarkRadiant.sln /p:configuration=release /t:rebuild /p:platform=Win32 /maxcpucount:4 
+msbuild ..\msvc2013\DarkRadiant.sln /p:configuration=release /t:rebuild /p:platform=Win32 /maxcpucount:4
 call copy_install_files.cmd
-call ..\innosetup\create_installer.x86.cmd
+cd ..\innosetup
+@echo For this script to run, please make sure that InnoSetup's compil32 is found via the PATH environment variable
+compil32 /cc darkradiant.iss
+"C:\Program Files\7-Zip\7z.exe" a -r -x!*.pdb -mx9 ..\innosetup\darkradiant-X.Y.ZpreV-x86.7z ..\..\..\DarkRadiant_install\*.*

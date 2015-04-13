@@ -27,8 +27,8 @@ public:
 
 	~KeyValue();
 
-	void instanceAttach(MapFile* map);
-	void instanceDetach(MapFile* map);
+    void connectUndoSystem(IMapFileChangeTracker& changeTracker);
+    void disconnectUndoSystem(IMapFileChangeTracker& changeTracker);
 
 	void attach(KeyObserver& observer);
 	void detach(KeyObserver& observer);

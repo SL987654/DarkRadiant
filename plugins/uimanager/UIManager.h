@@ -1,5 +1,4 @@
-#ifndef UIMANAGER_H_
-#define UIMANAGER_H_
+#pragma once
 
 #include "imodule.h"
 #include "iradiant.h"
@@ -11,16 +10,15 @@
 #include "StatusBarManager.h"
 #include "DialogManager.h"
 #include "colourscheme/ColourSchemeManager.h"
-#include <map>
-#include <boost/enable_shared_from_this.hpp>
 
-#include <gtkmm/iconfactory.h>
+namespace ui
+{
 
-namespace ui {
+class LocalBitmapArtProvider;
 
 class UIManager :
 	public IUIManager,
-	public boost::enable_shared_from_this<UIManager>
+	public std::enable_shared_from_this<UIManager>
 {
 private:
 	// Local helper class taking care of the menu
@@ -32,17 +30,12 @@ private:
 
 	DialogManagerPtr _dialogManager;
 
-	typedef std::map<std::string, Glib::RefPtr<Gdk::Pixbuf> > PixBufMap;
-	PixBufMap _localPixBufs;
-	PixBufMap _localPixBufsWithMask;
-
-    // IconFactory for local icons
-    Glib::RefPtr<Gtk::IconFactory> _iconFactory;
-
-private:
-    void addLocalBitmapsAsIconFactory();
+	LocalBitmapArtProvider* _bitmapArtProvider;
 
 public:
+	UIManager() :
+		_bitmapArtProvider(NULL)
+	{}
 
 	/** greebo: Retrieves the helper class to manipulate the menu.
 	 */
@@ -58,11 +51,9 @@ public:
 
 	IDialogManager& getDialogManager();
 
-    Glib::RefPtr<Gdk::Pixbuf> getLocalPixbuf(const std::string&);
-    Glib::RefPtr<Gdk::Pixbuf> getLocalPixbufWithMask(const std::string&);
-    Glib::RefPtr<Gtk::Builder> getGtkBuilderFromFile(const std::string&) const;
-
 	IFilterMenuPtr createFilterMenu();
+
+	const std::string& ArtIdPrefix() const;
 
 	// Called on radiant shutdown
 	void clear();
@@ -73,8 +64,6 @@ public:
 	void initialiseModule(const ApplicationContext& ctx);
 	void shutdownModule();
 }; // class UIManager
-typedef boost::shared_ptr<ui::UIManager> UIManagerPtr;
+typedef std::shared_ptr<ui::UIManager> UIManagerPtr;
 
 } // namespace ui
-
-#endif /*UIMANAGER_H_*/

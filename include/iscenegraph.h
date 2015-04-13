@@ -4,7 +4,7 @@
 #include "imodule.h"
 #include "inode.h"
 #include "ipath.h"
-#include <boost/weak_ptr.hpp>
+#include "imap.h"
 #include <sigc++/signal.h>
 
 /**
@@ -24,7 +24,7 @@ namespace scene
 {
 
 class ISpacePartitionSystem;
-typedef boost::shared_ptr<ISpacePartitionSystem> ISpacePartitionSystemPtr;
+typedef std::shared_ptr<ISpacePartitionSystem> ISpacePartitionSystemPtr;
 
 /**
 * A scene-graph - a Directed Acyclic Graph (DAG).
@@ -55,10 +55,10 @@ public:
 	};
 
 	// Returns the root-node of the graph.
-	virtual const INodePtr& root() const = 0;
+    virtual const IMapRootNodePtr& root() const = 0;
 
 	// Sets the root-node of the graph to be 'newRoot'.
-	virtual void setRoot(const INodePtr& newRoot) = 0;
+    virtual void setRoot(const IMapRootNodePtr& newRoot) = 0;
 
 	// greebo: Adds a node to the scenegraph
 	virtual void insert(const scene::INodePtr& node) = 0;
@@ -115,8 +115,8 @@ public:
 	// Returns the associated spacepartition
 	virtual ISpacePartitionSystemPtr getSpacePartition() = 0;
 };
-typedef boost::shared_ptr<Graph> GraphPtr;
-typedef boost::weak_ptr<Graph> GraphWeakPtr;
+typedef std::shared_ptr<Graph> GraphPtr;
+typedef std::weak_ptr<Graph> GraphWeakPtr;
 
 class Cloneable
 {
@@ -127,7 +127,7 @@ public:
 	/// \brief Returns a copy of itself.
 	virtual scene::INodePtr clone() const = 0;
 };
-typedef boost::shared_ptr<Cloneable> CloneablePtr;
+typedef std::shared_ptr<Cloneable> CloneablePtr;
 
 } // namespace
 
@@ -136,7 +136,7 @@ inline scene::Graph& GlobalSceneGraph()
 {
 	// Cache the reference locally
 	static scene::Graph& _sceneGraph(
-		*boost::dynamic_pointer_cast<scene::Graph>(
+		*std::dynamic_pointer_cast<scene::Graph>(
 			module::GlobalModuleRegistry().getModule(MODULE_SCENEGRAPH)
 		)
 	);

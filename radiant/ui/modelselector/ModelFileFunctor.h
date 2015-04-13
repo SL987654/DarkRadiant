@@ -1,10 +1,8 @@
-#ifndef MODELFILEFUNCTOR_H_
-#define MODELFILEFUNCTOR_H_
+#pragma once
 
-#include "gtkutil/VFSTreePopulator.h"
-#include "gtkutil/ModalProgressDialog.h"
+#include "wxutil/VFSTreePopulator.h"
+#include "wxutil/ModalProgressDialog.h"
 #include "imainframe.h"
-#include "ifilesystem.h"
 #include "iregistry.h"
 #include "igame.h"
 #include "EventRateLimiter.h"
@@ -26,15 +24,14 @@ namespace ui
  * Functor object to visit the global VFS and add model paths to a VFS tree
  * populator object.
  */
-class ModelFileFunctor :
-	public VirtualFileSystem::Visitor
+class ModelFileFunctor
 {
 	// VFSTreePopulators to populate
-	gtkutil::VFSTreePopulator& _populator;
-	gtkutil::VFSTreePopulator& _populator2;
+	wxutil::VFSTreePopulator& _populator;
+	wxutil::VFSTreePopulator& _populator2;
 
 	// Progress dialog and model count
-	gtkutil::ModalProgressDialog _progress;
+	wxutil::ModalProgressDialog _progress;
 	std::size_t _count;
 
     // Event rate limiter for progress dialog
@@ -45,10 +42,10 @@ class ModelFileFunctor :
 public:
 
 	// Constructor sets the populator
-	ModelFileFunctor(gtkutil::VFSTreePopulator& pop, gtkutil::VFSTreePopulator& pop2) :
+	ModelFileFunctor(wxutil::VFSTreePopulator& pop, wxutil::VFSTreePopulator& pop2) :
 		_populator(pop),
 		_populator2(pop2),
-		_progress(GlobalMainFrame().getTopLevelWindow(), _("Loading models")),
+		_progress(_("Loading models")),
 		_count(0),
 		_evLimiter(50)
 	{
@@ -60,7 +57,7 @@ public:
 	}
 
 	// VFS::Visitor implementation
-	void visit(const std::string& file)
+	void operator()(const std::string& file)
 	{
 		std::string ext = os::getExtension(file);
 		boost::algorithm::to_lower(ext);
@@ -85,5 +82,3 @@ public:
 };
 
 }
-
-#endif /*MODELFILEFUNCTOR_H_*/

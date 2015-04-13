@@ -1,13 +1,13 @@
 #include "KeyValue.h"
 
-#include <boost/bind.hpp>
+#include <functional>
 
 namespace entity {
 
 KeyValue::KeyValue(const std::string& value, const std::string& empty) :
 	_value(value),
 	_emptyValue(empty),
-	_undo(_value, boost::bind(&KeyValue::importState, this, _1))
+	_undo(_value, std::bind(&KeyValue::importState, this, std::placeholders::_1))
 {
 	notify();
 }
@@ -16,12 +16,14 @@ KeyValue::~KeyValue() {
 	assert(_observers.empty());
 }
 
-void KeyValue::instanceAttach(MapFile* map) {
-	_undo.instanceAttach(map);
+void KeyValue::connectUndoSystem(IMapFileChangeTracker& changeTracker)
+{
+    _undo.connectUndoSystem(changeTracker);
 }
 
-void KeyValue::instanceDetach(MapFile* map) {
-	_undo.instanceDetach(map);
+void KeyValue::disconnectUndoSystem(IMapFileChangeTracker& changeTracker)
+{
+    _undo.disconnectUndoSystem(changeTracker);
 }
 
 void KeyValue::attach(KeyObserver& observer) {

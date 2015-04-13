@@ -2,19 +2,15 @@
 
 #include <iostream>
 #include "iselectable.h"
+#include "iselection.h"
 
 #include "GraphTreeModelPopulator.h"
-#include "GraphTreeModelSelectionUpdater.h"
-
-#include <gtkmm/treestore.h>
-#include <gtkmm/treeselection.h>
-#include <gtkmm/treeview.h>
 
 namespace ui
 {
 
 GraphTreeModel::GraphTreeModel() :
-	_model(Gtk::TreeStore::create(_columns)),
+	_model(new wxutil::TreeModel(_columns)),
 	_visibleNodesOnly(false)
 {}
 
@@ -41,15 +37,16 @@ const GraphTreeNodePtr& GraphTreeModel::insert(const scene::INodePtr& node)
 	GraphTreeNodePtr gtNode(new GraphTreeNode(node));
 
 	// Insert this iterator below a possible parent iterator
-	Gtk::TreeModel::iterator parentIter = findParentIter(node);
+	wxDataViewItem parentIter = findParentIter(node);
 
-	gtNode->getIter() = parentIter ? _model->append(parentIter->children()) : _model->append();
+	wxutil::TreeModel::Row row = parentIter ? _model->AddItem(parentIter) : _model->AddItem();
+	gtNode->getIter() = row.getItem();
 
 	// Fill in the values
-	Gtk::TreeModel::Row row = *gtNode->getIter();
-
-	row[_columns.node] = node.get();
+	row[_columns.node] = wxVariant(static_cast<void*>(node.get()));
 	row[_columns.name] = node->name();
+
+	row.SendItemAdded();
 
 	// Insert this iterator into the node map to facilitate lookups
 	std::pair<NodeMap::iterator, bool> result = _nodemap.insert(
@@ -66,8 +63,8 @@ void GraphTreeModel::erase(const scene::INodePtr& node)
 
 	if (found != _nodemap.end())
 	{
-		// Remove this from the GtkTreeStore...
-		_model->erase(found->second->getIter());
+		// Remove this from the model...
+		_model->RemoveItem(found->second->getIter());
 
 		// ...and from our lookup table
 		_nodemap.erase(found);
@@ -82,17 +79,23 @@ const GraphTreeNodePtr& GraphTreeModel::find(const scene::INodePtr& node) const
 
 void GraphTreeModel::clear()
 {
-	// Remove everything, GTK plus nodemap
+	// Remove everything, wx plus nodemap
 	_nodemap.clear();
-	_model->clear();
+	_model->Clear();
 }
 
 void GraphTreeModel::refresh()
 {
+    // Create a new model from scratch and populate it
+    _model = new wxutil::TreeModel(_columns);
+
 	// Instantiate a scenegraph walker and visit every node in the graph
 	// The walker also clears the graph in its constructor
 	GraphTreeModelPopulator populator(*this, _visibleNodesOnly);
 	GlobalSceneGraph().root()->traverse(populator);
+
+    // Now sort the model once we have all nodes in the tree
+    _model->SortModelByColumn(_columns.name);
 }
 
 void GraphTreeModel::setConsiderVisibleNodesOnly(bool visibleOnly)
@@ -100,13 +103,17 @@ void GraphTreeModel::setConsiderVisibleNodesOnly(bool visibleOnly)
 	_visibleNodesOnly = visibleOnly;
 }
 
-void GraphTreeModel::updateSelectionStatus(const Glib::RefPtr<Gtk::TreeSelection>& selection)
+void GraphTreeModel::updateSelectionStatus(const NotifySelectionUpdateFunc& notifySelectionChanged)
 {
-	GraphTreeModelSelectionUpdater updater(*this, selection);
-	GlobalSceneGraph().root()->traverse(updater);
+    // Don't traverse the entire scenegraph, visit selected nodes only
+    GlobalSelectionSystem().foreachSelected([&](const scene::INodePtr& node)
+    {
+        updateSelectionStatus(node, notifySelectionChanged);
+    });
 }
 
-void GraphTreeModel::updateSelectionStatus(const Glib::RefPtr<Gtk::TreeSelection>& selection, const scene::INodePtr& node)
+void GraphTreeModel::updateSelectionStatus(const scene::INodePtr& node,
+										   const NotifySelectionUpdateFunc& notifySelectionChanged)
 {
 	NodeMap::const_iterator found = _nodemap.find(scene::INodeWeakPtr(node));
 
@@ -127,23 +134,7 @@ void GraphTreeModel::updateSelectionStatus(const Glib::RefPtr<Gtk::TreeSelection
 
 	if (foundNode)
 	{
-		if (Node_isSelected(node))
-		{
-			// Select the row in the TreeView
-			selection->select(foundNode->getIter());
-
-			// Scroll to the row
-			Gtk::TreeView* tv = selection->get_tree_view();
-
-			Gtk::TreeModel::Path selectedPath(foundNode->getIter());
-
-			tv->expand_to_path(selectedPath);
-			tv->scroll_to_row(selectedPath, 0.3f);
-		}
-		else
-		{
-			selection->unselect(foundNode->getIter());
-		}
+		notifySelectionChanged(foundNode->getIter(), Node_isSelected(node));
 	}
 }
 
@@ -164,13 +155,13 @@ const GraphTreeNodePtr& GraphTreeModel::findParentNode(const scene::INodePtr& no
 	return (found != _nodemap.end()) ? found->second : _nullTreeNode;
 }
 
-Gtk::TreeModel::iterator GraphTreeModel::findParentIter(const scene::INodePtr& node) const
+wxDataViewItem GraphTreeModel::findParentIter(const scene::INodePtr& node) const
 {
 	// Find the parent's GraphTreeNode
 	const GraphTreeNodePtr& nodePtr = findParentNode(node);
 
 	// Return an empty iterator if not found
-	return (nodePtr != NULL) ? nodePtr->getIter() : Gtk::TreeModel::iterator();
+	return (nodePtr != NULL) ? nodePtr->getIter() : wxDataViewItem();
 }
 
 const GraphTreeModel::TreeColumns& GraphTreeModel::getColumns() const
@@ -178,7 +169,7 @@ const GraphTreeModel::TreeColumns& GraphTreeModel::getColumns() const
 	return _columns;
 }
 
-Glib::RefPtr<Gtk::TreeModel> GraphTreeModel::getModel()
+wxutil::TreeModel::Ptr GraphTreeModel::getModel()
 {
 	return _model;
 }

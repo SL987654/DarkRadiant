@@ -3,6 +3,8 @@
 #include "TexDef.h"
 #include "ibrush.h"
 #include "itraceable.h"
+#include "iscenegraph.h"
+
 #include "Brush.h"
 #include "SelectableNode.h"
 #include "FaceInstance.h"
@@ -93,8 +95,8 @@ public:
 	void testSelectComponents(Selector& selector, SelectionTest& test, SelectionSystem::EComponentMode mode);
 
 	// override scene::Inode::onRemoveFromScene to deselect the child components
-	virtual void onInsertIntoScene();
-	virtual void onRemoveFromScene();
+    virtual void onInsertIntoScene(scene::IMapRootNode& root) override;
+    virtual void onRemoveFromScene(scene::IMapRootNode& root) override;
 
 	// ComponentEditable implementation
 	const AABB& getSelectedComponentsBounds() const;
@@ -159,11 +161,11 @@ public:
 protected:
 	// Gets called by the Transformable implementation whenever
 	// scale, rotation or translation is changed.
-	void _onTransformationChanged();
+	void _onTransformationChanged() override;
 
 	// Called by the Transformable implementation before freezing
 	// or when reverting transformations.
-	void _applyTransformation();
+    void _applyTransformation() override;
 
 private:
 	void transformComponents(const Matrix4& matrix);
@@ -180,4 +182,4 @@ private:
 	void evaluateViewDependent(const VolumeTest& volume, const Matrix4& localToWorld) const;
 
 }; // class BrushNode
-typedef boost::shared_ptr<BrushNode> BrushNodePtr;
+typedef std::shared_ptr<BrushNode> BrushNodePtr;

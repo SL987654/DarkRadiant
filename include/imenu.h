@@ -1,13 +1,11 @@
-#ifndef _IMENU_H_
-#define _IMENU_H_
+#pragma once
 
-#include <boost/function.hpp>
-#include <boost/shared_ptr.hpp>
+#include <memory>
 
-namespace Gtk
-{
-	class MenuItem;
-}
+#include <functional>
+#include <memory>
+
+class wxMenuItem;
 
 namespace ui
 {
@@ -20,16 +18,16 @@ namespace ui
  *
  * An utility implementation of this class can be found in
  * gtkutil::MenuItem which can be constructed from strings
- * and boost::function objects.
+ * and std::function objects.
  */
 class IMenuItem
 {
 public:
 	/**
 	 * Each menu item must return a distinct widget which is packed
-	 * into the parent GTK container.
+	 * into the parent wxMenu
 	 */
-	virtual Gtk::MenuItem* getWidget() = 0;
+	virtual wxMenuItem* getMenuItem() = 0;
 
 	// Callback to run when this item is selected in the menus
 	virtual void execute() = 0;
@@ -58,7 +56,7 @@ public:
 	virtual void preShow()
 	{}
 };
-typedef boost::shared_ptr<IMenuItem> IMenuItemPtr;
+typedef std::shared_ptr<IMenuItem> IMenuItemPtr;
 
 /**
  * An abstract menu object, which can have one or more IMenuItems as children.
@@ -73,19 +71,19 @@ public:
 	 * Function callback. Each menu item is associated with one of these, which
 	 * is invoked when the menu item is activated.
 	 */
-	typedef boost::function<void (void)> Callback;
+	typedef std::function<void (void)> Callback;
 
 	/**
 	 * Sensitivity callback. This function object returns a true or false value,
 	 * indicating whether the associated menu item should be clickable or not.
 	 */
-	typedef boost::function<bool (void)> SensitivityTest;
+	typedef std::function<bool (void)> SensitivityTest;
 
 	/**
 	 * Visibility callback. This function object returns a true or false value,
 	 * indicating whether the associated menu item should be visible or not.
 	 */
-	typedef boost::function<bool (void)> VisibilityTest;
+	typedef std::function<bool (void)> VisibilityTest;
 
 protected:
 	/*
@@ -98,7 +96,7 @@ protected:
 public:
 	// Convenience method, directly taking text and icon strings plus
 	// callback function objects as argument.
-	virtual void addItem(Gtk::MenuItem* widget,
+	virtual void addItem(wxMenuItem* widget,
 						 const Callback& callback,
 						 const SensitivityTest& sensTest = SensitivityTest(_alwaysTrue),
 						 const VisibilityTest& visTest = VisibilityTest(_alwaysTrue)) = 0;
@@ -108,5 +106,3 @@ public:
 };
 
 } // namespace
-
-#endif /* _IMENU_H_ */

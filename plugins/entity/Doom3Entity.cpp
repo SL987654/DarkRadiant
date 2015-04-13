@@ -1,18 +1,17 @@
 #include "Doom3Entity.h"
 
 #include "iradiant.h"
-#include "icounter.h"
 #include "ieclass.h"
 #include "debugging/debugging.h"
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/bind.hpp>
+#include <functional>
 
 namespace entity {
 
 Doom3Entity::Doom3Entity(const IEntityClassPtr& eclass) :
 	_eclass(eclass),
-	_undo(_keyValues, boost::bind(&Doom3Entity::importState, this, _1)),
+	_undo(_keyValues, std::bind(&Doom3Entity::importState, this, std::placeholders::_1)),
 	_instanced(false),
 	_observerMutex(false),
 	_isContainer(!eclass->isFixedSize())
@@ -21,7 +20,7 @@ Doom3Entity::Doom3Entity(const IEntityClassPtr& eclass) :
 Doom3Entity::Doom3Entity(const Doom3Entity& other) :
 	Entity(other),
 	_eclass(other.getEntityClass()),
-	_undo(_keyValues, boost::bind(&Doom3Entity::importState, this, _1)),
+	_undo(_keyValues, std::bind(&Doom3Entity::importState, this, std::placeholders::_1)),
 	_instanced(false),
 	_observerMutex(false),
 	_isContainer(other._isContainer)
@@ -104,37 +103,19 @@ void Doom3Entity::detachObserver(Observer* observer)
 	}
 }
 
-void Doom3Entity::forEachKeyValue_instanceAttach(MapFile* map)
+void Doom3Entity::connectUndoSystem(IMapFileChangeTracker& changeTracker)
 {
-	for(KeyValues::const_iterator i = _keyValues.begin(); i != _keyValues.end(); ++i)
-	{
-		i->second->instanceAttach(map);
-	}
-}
-
-void Doom3Entity::forEachKeyValue_instanceDetach(MapFile* map)
-{
-	for(KeyValues::const_iterator i = _keyValues.begin(); i != _keyValues.end(); ++i)
-	{
-		i->second->instanceDetach(map);
-	}
-}
-
-void Doom3Entity::instanceAttach(MapFile* map)
-{
-	GlobalCounters().getCounter(counterEntities).increment();
-
 	_instanced = true;
-	forEachKeyValue_instanceAttach(map);
-	_undo.instanceAttach(map);
+
+    for (auto keyValue : _keyValues) keyValue.second->connectUndoSystem(changeTracker);
+    _undo.connectUndoSystem(changeTracker);
 }
 
-void Doom3Entity::instanceDetach(MapFile* map)
+void Doom3Entity::disconnectUndoSystem(IMapFileChangeTracker& changeTracker)
 {
-	GlobalCounters().getCounter(counterEntities).decrement();
+	_undo.disconnectUndoSystem(changeTracker);
+    for (auto keyValue : _keyValues) keyValue.second->disconnectUndoSystem(changeTracker);
 
-	_undo.instanceDetach(map);
-	forEachKeyValue_instanceDetach(map);
 	_instanced = false;
 }
 
@@ -294,7 +275,7 @@ void Doom3Entity::insert(const std::string& key, const KeyValuePtr& keyValue)
 
 	if (_instanced)
 	{
-		i->second->instanceAttach(_undo.map());
+		i->second->connectUndoSystem(_undo.getUndoChangeTracker());
 	}
 }
 
@@ -329,7 +310,7 @@ void Doom3Entity::erase(const KeyValues::iterator& i)
 {
 	if (_instanced)
 	{
-		i->second->instanceDetach(_undo.map());
+		i->second->disconnectUndoSystem(_undo.getUndoChangeTracker());
 	}
 
 	// Retrieve the key and value from the vector before deletion

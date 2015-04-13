@@ -2,8 +2,10 @@
 
 #include "ifilter.h"
 #include "irenderable.h"
+#include "iscenegraph.h"
+
 #include "math/Frustum.h"
-#include <boost/bind.hpp>
+#include <functional>
 
 inline bool triangle_reversed(std::size_t x, std::size_t y, std::size_t z) {
 	return !((x < y && y < z) || (z < x && x < y) || (y < z && z < x));
@@ -27,7 +29,7 @@ FaceInstanceSet FaceInstance::_selectedFaceInstances;
 
 FaceInstance::FaceInstance(Face& face, const SelectionChangedSlot& observer) :
 	m_face(&face),
-	m_selectable(boost::bind(&FaceInstance::selectedChanged, this, _1)),
+	m_selectable(std::bind(&FaceInstance::selectedChanged, this, std::placeholders::_1)),
 	m_selectableVertices(observer),
 	m_selectableEdges(observer),
 	m_selectionChanged(observer)
@@ -35,7 +37,7 @@ FaceInstance::FaceInstance(Face& face, const SelectionChangedSlot& observer) :
 
 FaceInstance::FaceInstance(const FaceInstance& other) :
 	m_face(other.m_face),
-	m_selectable(boost::bind(&FaceInstance::selectedChanged, this, _1)),
+	m_selectable(std::bind(&FaceInstance::selectedChanged, this, std::placeholders::_1)),
 	m_selectableVertices(other.m_selectableVertices),
 	m_selectableEdges(other.m_selectableEdges),
 	m_selectionChanged(other.m_selectionChanged)
@@ -245,7 +247,7 @@ void FaceInstance::selectReversedPlane(Selector& selector, const SelectedPlanes&
 
 void FaceInstance::transformComponents(const Matrix4& matrix) {
 	if (isSelected()) {
-		m_face->transform(matrix, false);
+		m_face->transform(matrix);
 	}
 
 	if (selectedVertices())

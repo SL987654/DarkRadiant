@@ -144,7 +144,7 @@ class SceneGraphInterface :
 {
 public:
 	ScriptSceneNode root() {
-		return GlobalSceneGraph().root();
+		return ScriptSceneNode(GlobalSceneGraph().root());
 	}
 
 	// IScriptInterface implementation
@@ -182,6 +182,6 @@ public:
 		nspace["GlobalSceneGraph"] = boost::python::ptr(this);
 	}
 };
-typedef boost::shared_ptr<SceneGraphInterface> SceneGraphInterfacePtr;
+typedef std::shared_ptr<SceneGraphInterface> SceneGraphInterfacePtr;
 
 } // namespace script

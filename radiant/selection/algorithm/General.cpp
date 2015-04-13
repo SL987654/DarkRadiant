@@ -15,6 +15,7 @@
 #include "selection/shaderclipboard/ShaderClipboard.h"
 #include "ui/texturebrowser/TextureBrowser.h"
 #include "string/convert.h"
+#include "selectionlib.h"
 
 #include "SelectionPolicies.h"
 #include "selection/SceneWalkers.h"
@@ -30,7 +31,6 @@
 #include "patch/Patch.h"
 #include "patch/PatchNode.h"
 
-#include <boost/scoped_array.hpp>
 #include <stack>
 
 namespace selection
@@ -410,14 +410,19 @@ void deleteSelection()
 	{
 		scene::INodePtr parent = node->getParent();
 
-		// Remove the childnodes
-		scene::removeNodeFromParent(node);
+        // Check for NULL parents. It's possible that both parent and child are in the eraseList
+        // and the parent has been deleted already.
+        if (parent)
+        {
+            // Remove the childnodes
+            scene::removeNodeFromParent(node);
 
-		if (!parent->hasChildNodes())
-		{
-			// Remove the parent as well
-			scene::removeNodeFromParent(parent);
-		}
+            if (!parent->hasChildNodes())
+            {
+                // Remove the parent as well
+                scene::removeNodeFromParent(parent);
+            }
+        }
 	});
 
 	SceneChangeNotify();
@@ -495,7 +500,7 @@ public:
 
 		// we may not need all AABBs since not all selected objects have to be brushes
 		const std::size_t max = GlobalSelectionSystem().countSelected();
-		boost::scoped_array<AABB> aabbs(new AABB[max]);
+        std::unique_ptr<AABB[]> aabbs(new AABB[max]);
 
 		// Loops over all selected brushes and stores their
 		// world AABBs in the specified array.
@@ -753,7 +758,7 @@ public:
 			rMessage() << "Ray intersects with node " << node->name() << " at " << intersection;
 
 			// We have an intersection, let's attempt a full trace against the object
-			ITraceablePtr traceable = boost::dynamic_pointer_cast<ITraceable>(node);
+			ITraceablePtr traceable = std::dynamic_pointer_cast<ITraceable>(node);
 
 			if (traceable && traceable->getIntersection(_ray, intersection))
 			{

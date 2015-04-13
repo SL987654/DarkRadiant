@@ -4,6 +4,8 @@
 #include "inode.h"
 #include <set>
 
+#include <sigc++/signal.h>
+
 namespace selection
 {
 
@@ -35,22 +37,18 @@ public:
 	// Returns the nodes contained in this selection set.
 	virtual std::set<scene::INodePtr> getNodes() = 0;
 };
-typedef boost::shared_ptr<ISelectionSet> ISelectionSetPtr;
+typedef std::shared_ptr<ISelectionSet> ISelectionSetPtr;
 
 class ISelectionSetManager :
 	public RegisterableModule
 {
 public:
-	class Observer
-	{
-	public:
-		// Called when the list of selection sets has been changed,
-		// by deletion or addition
-		virtual void onSelectionSetsChanged() = 0;
-	};
 
-	virtual void addObserver(Observer& observer) = 0;
-	virtual void removeObserver(Observer& observer) = 0;
+    /**
+     * Signal emitted when the list of selection sets has been changed, by
+     * deletion or addition.
+     */
+    virtual sigc::signal<void> signal_selectionSetsChanged() const = 0;
 
 	class Visitor
 	{
@@ -105,7 +103,7 @@ inline selection::ISelectionSetManager& GlobalSelectionSetManager()
 {
 	// Cache the reference locally
 	static selection::ISelectionSetManager& _manager(
-		*boost::static_pointer_cast<selection::ISelectionSetManager>(
+		*std::static_pointer_cast<selection::ISelectionSetManager>(
 			module::GlobalModuleRegistry().getModule(MODULE_SELECTIONSET)
 		)
 	);

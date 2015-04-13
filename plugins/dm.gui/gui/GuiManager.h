@@ -2,7 +2,7 @@
 #define GuiManager_h__
 
 #include <boost/noncopyable.hpp>
-#include <boost/shared_ptr.hpp>
+#include <memory>
 #include <map>
 #include "ifilesystem.h"
 #include "string/string.h"
@@ -29,14 +29,13 @@ enum GuiType
 };
 
 class Gui;
-typedef boost::shared_ptr<Gui> GuiPtr;
+typedef std::shared_ptr<Gui> GuiPtr;
 
 /**
  * greebo: This manager keeps track of all the loaded GUIs,
  * including parsing the .gui files on demand.
  */
 class GuiManager :
-	public VirtualFileSystem::Visitor,
 	public boost::noncopyable
 {
 public:
@@ -83,7 +82,7 @@ public:
 	GuiPtr getGui(const std::string& guiPath);
 
 	// Operator used for callback by refreshGuiDefinitions.
-	void visit(const std::string& guiPath);
+    void loadGuiFromFile(const std::string& guiPath);
 
 	// Returns the number of known GUIs (or GUI paths)
 	std::size_t getNumGuis() const;

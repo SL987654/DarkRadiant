@@ -1,10 +1,7 @@
-#ifndef _IORTHOCONTEXT_MENU_H_
-#define _IORTHOCONTEXT_MENU_H_
+#pragma once
 
 #include "imodule.h"
 #include "imenu.h"
-
-typedef struct _GtkWidget GtkWidget;
 
 namespace ui
 {
@@ -46,11 +43,9 @@ inline ui::IOrthoContextMenu& GlobalOrthoContextMenu()
 {
 	// Cache the reference locally
 	static ui::IOrthoContextMenu& _menu(
-		*boost::static_pointer_cast<ui::IOrthoContextMenu>(
+		*std::static_pointer_cast<ui::IOrthoContextMenu>(
 			module::GlobalModuleRegistry().getModule(MODULE_ORTHOCONTEXTMENU)
 		)
 	);
 	return _menu;
 }
-
-#endif /* _IORTHOCONTEXT_MENU_H_ */

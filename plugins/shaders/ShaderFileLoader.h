@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ifilesystem.h"
+#include "iradiant.h"
 #include "ShaderTemplate.h"
 
 #include "parser/DefTokeniser.h"
@@ -13,12 +14,15 @@ namespace shaders
 /**
  * VFS functor class which loads material (mtr) files.
  */
-class ShaderFileLoader :
-	public VirtualFileSystem::Visitor
+class ShaderFileLoader
 {
 private:
 	// The base path for the shaders (e.g. "materials/")
 	std::string _basePath;
+
+	ILongRunningOperation* _currentOperation;
+
+	std::vector<std::string> _files;
 
 private:
 
@@ -27,12 +31,16 @@ private:
 
 public:
 	// Constructor. Set the basepath to prepend onto shader filenames.
-	ShaderFileLoader(const std::string& path)
-	: _basePath(path)
-	{}
+	ShaderFileLoader(const std::string& path, ILongRunningOperation* currentOperation)
+	: _basePath(path),
+	_currentOperation(currentOperation)
+	{
+		_files.reserve(200);
+	}
 
-	// FileVisitor implementation
-	void visit(const std::string& filename);
+	void addFile(const std::string& filename);
+
+	void parseFiles();
 };
 
 }

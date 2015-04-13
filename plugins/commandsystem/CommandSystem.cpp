@@ -9,7 +9,7 @@
 #include "Command.h"
 #include "Statement.h"
 
-#include <boost/bind.hpp>
+#include <functional>
 #include <boost/algorithm/string/trim.hpp>
 
 namespace cmd
@@ -42,10 +42,10 @@ void CommandSystem::initialiseModule(const ApplicationContext& ctx)
 	rMessage() << "CommandSystem::initialiseModule called." << std::endl;
 
 	// Add the built-in commands
-	addCommand("bind", boost::bind(&CommandSystem::bindCmd, this, _1), Signature(ARGTYPE_STRING, ARGTYPE_STRING));
-	addCommand("unbind", boost::bind(&CommandSystem::unbindCmd, this, _1), ARGTYPE_STRING);
-	addCommand("listCmds", boost::bind(&CommandSystem::listCmds, this, _1));
-	addCommand("print", boost::bind(&CommandSystem::printCmd, this, _1), ARGTYPE_STRING);
+	addCommand("bind", std::bind(&CommandSystem::bindCmd, this, std::placeholders::_1), Signature(ARGTYPE_STRING, ARGTYPE_STRING));
+	addCommand("unbind", std::bind(&CommandSystem::unbindCmd, this, std::placeholders::_1), ARGTYPE_STRING);
+	addCommand("listCmds", std::bind(&CommandSystem::listCmds, this, std::placeholders::_1));
+	addCommand("print", std::bind(&CommandSystem::printCmd, this, std::placeholders::_1), ARGTYPE_STRING);
 
 	loadBinds();
 }
@@ -110,7 +110,7 @@ void CommandSystem::saveBinds() {
 	for (CommandMap::const_iterator i = _commands.begin(); i != _commands.end(); ++i)
 	{
 		// Check if this is actually a statement
-		StatementPtr st = boost::dynamic_pointer_cast<Statement>(i->second);
+		StatementPtr st = std::dynamic_pointer_cast<Statement>(i->second);
 
 		if (st == NULL || st->isReadonly()) continue; // not a statement or readonly
 
@@ -152,7 +152,7 @@ void CommandSystem::unbindCmd(const ArgumentList& args) {
 	}
 
 	// Check if this is actually a statement
-	StatementPtr st = boost::dynamic_pointer_cast<Statement>(found->second);
+	StatementPtr st = std::dynamic_pointer_cast<Statement>(found->second);
 
 	if (st != NULL && !st->isReadonly())
 	{
@@ -174,7 +174,7 @@ void CommandSystem::listCmds(const ArgumentList& args) {
 	for (CommandMap::const_iterator i = _commands.begin(); i != _commands.end(); ++i) {
 		rMessage() << i->first;
 
-		StatementPtr st = boost::dynamic_pointer_cast<Statement>(i->second);
+		StatementPtr st = std::dynamic_pointer_cast<Statement>(i->second);
 		if (st != NULL) {
 			rMessage() << " => " << st->getValue();
 		}
@@ -240,7 +240,7 @@ void CommandSystem::foreachStatement(const std::function<void(const std::string&
 {
 	std::for_each(_commands.begin(), _commands.end(), [&] (const CommandMap::value_type& i)
 	{
-		StatementPtr statement = boost::dynamic_pointer_cast<Statement>(i.second);
+		StatementPtr statement = std::dynamic_pointer_cast<Statement>(i.second);
 
 		if (statement && (!customStatementsOnly || !statement->isReadonly()))
 		{

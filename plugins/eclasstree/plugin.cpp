@@ -40,7 +40,7 @@ public:
 		rMessage() << getName() << "::initialiseModule called.\n";
 
 		// Add the callback event
-		GlobalCommandSystem().addCommand("EntityClassTree", ui::EClassTree::showWindow);
+		GlobalCommandSystem().addCommand("EntityClassTree", ui::EClassTree::ShowDialog);
 		GlobalEventManager().addCommand("EntityClassTree", "EntityClassTree");
 
 		// Add the menu item
@@ -53,7 +53,7 @@ public:
 				"EntityClassTree"); // event name
 	}
 };
-typedef boost::shared_ptr<EClassTreeModule> EClassTreeModulePtr;
+typedef std::shared_ptr<EClassTreeModule> EClassTreeModulePtr;
 
 extern "C" void DARKRADIANT_DLLEXPORT RegisterModule(IModuleRegistry& registry) {
 	registry.registerModule(EClassTreeModulePtr(new EClassTreeModule));
